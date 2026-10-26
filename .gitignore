@@ -1,0 +1,7 @@
+﻿.ai/
+*.exe
+*.dll
+*.db
+*.gguf
+*.log
+*.zip

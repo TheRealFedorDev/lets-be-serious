@@ -1,0 +1,789 @@
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/mail"
+	"net/url"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	sessionCookieName = "odin_session"
+	sessionTTL        = 7 * 24 * time.Hour
+	maxBodyBytes      = 1 << 20
+)
+
+var hexColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+
+type Config struct {
+	Port          string
+	DBPath        string
+	StaticPath    string
+	AssetsPath    string
+	SecureCookies bool
+	OpenBrowser   bool
+	DemoEmail     string
+	DemoPassword  string
+	DemoName      string
+}
+
+type API struct {
+	store         *Store
+	ai            *AIManager
+	secureCookies bool
+	sessionTTL    time.Duration
+	cfg           Config
+}
+
+type contextKey string
+
+const userContextKey contextKey = "user"
+
+type credentialsRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type registerRequest struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type preferencesRequest struct {
+	Accent   string `json:"accent"`
+	MenuTint string `json:"menuTint"`
+}
+
+type chatRequest struct {
+	Message         string     `json:"message"`
+	DestinationSlug string     `json:"destinationSlug"`
+	History         []ChatTurn `json:"history"`
+}
+
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (recorder *responseRecorder) WriteHeader(status int) {
+	recorder.status = status
+	recorder.ResponseWriter.WriteHeader(status)
+}
+
+func (recorder *responseRecorder) Write(data []byte) (int, error) {
+	if recorder.status == 0 {
+		recorder.status = http.StatusOK
+	}
+	return recorder.ResponseWriter.Write(data)
+}
+
+func main() {
+	cfg := loadConfig()
+
+	store, err := OpenStore(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("database: %v", err)
+	}
+	defer store.Close()
+
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancelStartup()
+	if err := seedBaseData(startupCtx, store); err != nil {
+		log.Fatalf("seed content: %v", err)
+	}
+	if err := ensureDemoUser(startupCtx, store, cfg); err != nil {
+		log.Fatalf("seed demo account: %v", err)
+	}
+
+	aiManager := NewAIManager(LoadAIConfig())
+	aiManager.Start()
+	defer aiManager.Close()
+
+	api := &API{
+		store:         store,
+		ai:            aiManager,
+		secureCookies: cfg.SecureCookies,
+		sessionTTL:    sessionTTL,
+		cfg:           cfg,
+	}
+
+	handler := recoverMiddleware(logMiddleware(securityHeaders(routes(api, cfg))))
+	server := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       20 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	appURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	go func() {
+		log.Printf("ODIN Travel running at %s", appURL)
+		log.Printf("demo traveler: %s", cfg.DemoEmail)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server: %v", err)
+		}
+	}()
+
+	if cfg.OpenBrowser {
+		go func() {
+			time.Sleep(600 * time.Millisecond)
+			openBrowser(appURL)
+		}()
+	}
+
+	<-ctx.Done()
+	log.Println("shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
+}
+
+func loadConfig() Config {
+	baseDir := appBaseDir()
+	return Config{
+		Port:          env("PORT", "8080"),
+		DBPath:        env("ODIN_DB_PATH", filepath.Join(baseDir, "odin.db")),
+		StaticPath:    env("ODIN_STATIC_PATH", filepath.Join(baseDir, "index.html")),
+		AssetsPath:    env("ODIN_ASSETS_PATH", filepath.Join(baseDir, "assets")),
+		SecureCookies: envBool("ODIN_SECURE_COOKIE", false),
+		OpenBrowser:   envBool("ODIN_OPEN_BROWSER", true),
+		DemoEmail:     strings.ToLower(env("ODIN_DEMO_EMAIL", "demo@odin.travel")),
+		DemoPassword:  env("ODIN_DEMO_PASSWORD", "odin-demo-2026"),
+		DemoName:      env("ODIN_DEMO_NAME", "Анна Смирнова"),
+	}
+}
+
+func env(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func appBaseDir() string {
+	if executable, err := os.Executable(); err == nil {
+		dir := filepath.Dir(executable)
+		if _, statErr := os.Stat(filepath.Join(dir, "index.html")); statErr == nil {
+			return dir
+		}
+	}
+	if workingDir, err := os.Getwd(); err == nil {
+		return workingDir
+	}
+	return "."
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func routes(api *API, cfg Config) http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /api/health", api.handleHealth)
+	mux.HandleFunc("GET /api/home", api.handleHome)
+	mux.HandleFunc("GET /api/destinations", api.handleDestinations)
+	mux.HandleFunc("GET /api/search", api.handleSearch)
+	mux.HandleFunc("GET /api/hotels/{slug}", api.handleHotel)
+	mux.HandleFunc("GET /api/trips", api.requireAuth(api.handleTrips))
+	mux.HandleFunc("POST /api/bookings", api.requireAuth(api.handleCreateBooking))
+	mux.HandleFunc("POST /api/bookings/{id}/cancel", api.requireAuth(api.handleCancelBooking))
+	mux.HandleFunc("GET /api/favorites", api.requireAuth(api.handleFavorites))
+	mux.HandleFunc("POST /api/favorites/{id}", api.requireAuth(api.handleToggleFavorite))
+	mux.HandleFunc("GET /api/assistant/status", api.handleAssistantStatus)
+	mux.HandleFunc("POST /api/assistant/chat", api.handleAssistantChat)
+
+	mux.HandleFunc("POST /api/auth/register", api.handleRegister)
+	mux.HandleFunc("POST /api/auth/login", api.handleLogin)
+	mux.HandleFunc("POST /api/auth/demo", api.handleDemoLogin)
+	mux.HandleFunc("POST /api/auth/logout", api.handleLogout)
+	mux.HandleFunc("GET /api/auth/me", api.requireAuth(api.handleMe))
+	mux.HandleFunc("PUT /api/preferences", api.requireAuth(api.handlePreferences))
+
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, "API-метод не найден")
+	})
+
+	assets := http.FileServer(http.Dir(cfg.AssetsPath))
+	mux.Handle("GET /assets/", http.StripPrefix("/assets/", cacheControl(assets)))
+
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		serveIndex(w, r, cfg.StaticPath)
+	})
+	mux.HandleFunc("GET /index.html", func(w http.ResponseWriter, r *http.Request) {
+		serveIndex(w, r, cfg.StaticPath)
+	})
+
+	return mux
+}
+
+func serveIndex(w http.ResponseWriter, r *http.Request, path string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
+}
+
+func cacheControl(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".js") || strings.HasSuffix(r.URL.Path, ".css") {
+			w.Header().Set("Cache-Control", "no-cache")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (api *API) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"time":   time.Now().UTC().Format(time.RFC3339),
+		"ai":     api.ai.Status(),
+	})
+}
+
+func (api *API) handleHome(w http.ResponseWriter, r *http.Request) {
+	userID := api.optionalUserID(r)
+	home, err := api.store.Home(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось загрузить подборки")
+		return
+	}
+	writeJSON(w, http.StatusOK, home)
+}
+
+func (api *API) handleDestinations(w http.ResponseWriter, r *http.Request) {
+	destinations, err := api.store.Destinations(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось загрузить направления")
+		return
+	}
+	writeJSON(w, http.StatusOK, destinations)
+}
+
+func (api *API) handleSearch(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	guests := 0
+	if value := query.Get("guests"); value != "" {
+		guests, _ = strconv.Atoi(value)
+	}
+	maxPrice := 0
+	if value := query.Get("maxPrice"); value != "" {
+		maxPrice, _ = strconv.Atoi(value)
+	}
+
+	result, err := api.store.Search(r.Context(), api.optionalUserID(r), SearchParams{
+		Query:       query.Get("q"),
+		Destination: query.Get("destination"),
+		Guests:      guests,
+		MaxPrice:    maxPrice,
+		Tag:         query.Get("tag"),
+		Sort:        query.Get("sort"),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось выполнить поиск")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (api *API) handleHotel(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimSpace(r.PathValue("slug"))
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "Отель не найден")
+		return
+	}
+	guests := 2
+	if value := r.URL.Query().Get("guests"); value != "" {
+		guests, _ = strconv.Atoi(value)
+	}
+	detail, err := api.store.HotelBySlug(
+		r.Context(),
+		api.optionalUserID(r),
+		slug,
+		r.URL.Query().Get("checkIn"),
+		r.URL.Query().Get("checkOut"),
+		guests,
+	)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusNotFound, "Отель не найден")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось загрузить отель")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (api *API) handleTrips(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	trips, err := api.store.Trips(r.Context(), user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось загрузить поездки")
+		return
+	}
+	writeJSON(w, http.StatusOK, trips)
+}
+
+func (api *API) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
+	var input BookingInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте данные бронирования")
+		return
+	}
+
+	input.GuestName = strings.TrimSpace(input.GuestName)
+	input.GuestEmail = strings.ToLower(strings.TrimSpace(input.GuestEmail))
+	input.GuestPhone = strings.TrimSpace(input.GuestPhone)
+	if len([]rune(input.GuestName)) < 2 || len([]rune(input.GuestName)) > 80 {
+		writeError(w, http.StatusBadRequest, "Укажите имя гостя")
+		return
+	}
+	if !validEmail(input.GuestEmail) {
+		writeError(w, http.StatusBadRequest, "Укажите корректный email")
+		return
+	}
+	if len(input.GuestPhone) < 5 || len(input.GuestPhone) > 30 {
+		writeError(w, http.StatusBadRequest, "Укажите телефон для связи")
+		return
+	}
+
+	user := currentUser(r)
+	trip, err := api.store.CreateBooking(r.Context(), user.ID, input)
+	switch {
+	case errors.Is(err, ErrUnavailable):
+		writeError(w, http.StatusConflict, "Этот номер уже занят на выбранные даты")
+		return
+	case errors.Is(err, ErrNotFound):
+		writeError(w, http.StatusNotFound, "Номер не найден")
+		return
+	case err != nil:
+		writeError(w, http.StatusBadRequest, "Не удалось создать бронирование. Проверьте даты и гостей.")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, trip)
+}
+
+func (api *API) handleCancelBooking(w http.ResponseWriter, r *http.Request) {
+	bookingID, err := parseID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Некорректная бронь")
+		return
+	}
+	user := currentUser(r)
+	if err := api.store.CancelBooking(r.Context(), user.ID, bookingID); err != nil {
+		if errors.Is(err, ErrCantCancel) {
+			writeError(w, http.StatusConflict, "Эту бронь уже нельзя отменить")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Не удалось отменить бронь")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (api *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	favorites, err := api.store.Favorites(r.Context(), user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось загрузить избранное")
+		return
+	}
+	writeJSON(w, http.StatusOK, favorites)
+}
+
+func (api *API) handleToggleFavorite(w http.ResponseWriter, r *http.Request) {
+	hotelID, err := parseID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Некорректный отель")
+		return
+	}
+	user := currentUser(r)
+	favorited, err := api.store.ToggleFavorite(r.Context(), user.ID, hotelID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось обновить избранное")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"favorited": favorited})
+}
+
+func (api *API) handlePreferences(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var input preferencesRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте настройки меню")
+		return
+	}
+	if !hexColorPattern.MatchString(input.Accent) || !hexColorPattern.MatchString(input.MenuTint) {
+		writeError(w, http.StatusBadRequest, "Неверный формат цвета")
+		return
+	}
+	preferences := Preferences{Accent: strings.ToUpper(input.Accent), MenuTint: strings.ToUpper(input.MenuTint)}
+	user := currentUser(r)
+	if err := api.store.SavePreferences(r.Context(), user.ID, preferences); err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось сохранить настройки меню")
+		return
+	}
+	writeJSON(w, http.StatusOK, preferences)
+}
+
+func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Запрос отклонён")
+		return
+	}
+	var input registerRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте данные формы")
+		return
+	}
+
+	name := strings.TrimSpace(input.Name)
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if len([]rune(name)) < 2 || len([]rune(name)) > 80 {
+		writeError(w, http.StatusBadRequest, "Имя должно содержать от 2 до 80 символов")
+		return
+	}
+	if !validEmail(email) {
+		writeError(w, http.StatusBadRequest, "Введите корректный email")
+		return
+	}
+	if len(input.Password) < 8 || len(input.Password) > 72 {
+		writeError(w, http.StatusBadRequest, "Пароль должен содержать от 8 до 72 символов")
+		return
+	}
+
+	ctx := r.Context()
+	if _, err := api.store.FindUserByEmail(ctx, email); err == nil {
+		writeError(w, http.StatusConflict, "Аккаунт с таким email уже существует")
+		return
+	} else if !errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusInternalServerError, "Не удалось проверить аккаунт")
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось создать аккаунт")
+		return
+	}
+	user, err := api.store.CreateUser(ctx, name, email, string(hash))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось создать аккаунт")
+		return
+	}
+	if err := api.issueSession(w, r, user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось создать сессию")
+		return
+	}
+	preferences, _ := api.store.Preferences(ctx, user.ID)
+	writeJSON(w, http.StatusCreated, AuthPayload{User: user, Preferences: preferences})
+}
+
+func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Запрос отклонён")
+		return
+	}
+	var input credentialsRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте данные формы")
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if !validEmail(email) || input.Password == "" {
+		writeError(w, http.StatusUnauthorized, "Неверный email или пароль")
+		return
+	}
+
+	ctx := r.Context()
+	userID, hash, err := api.store.UserPasswordHash(ctx, email)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusUnauthorized, "Неверный email или пароль")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось войти")
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(input.Password)); err != nil {
+		writeError(w, http.StatusUnauthorized, "Неверный email или пароль")
+		return
+	}
+
+	user, err := api.store.UserByID(ctx, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось загрузить аккаунт")
+		return
+	}
+	if err := api.issueSession(w, r, user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось создать сессию")
+		return
+	}
+	preferences, _ := api.store.Preferences(ctx, user.ID)
+	writeJSON(w, http.StatusOK, AuthPayload{User: user, Preferences: preferences})
+}
+
+func (api *API) handleDemoLogin(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Запрос отклонён")
+		return
+	}
+	ctx := r.Context()
+	user, err := api.store.FindUserByEmail(ctx, api.cfg.DemoEmail)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Демо-аккаунт недоступен")
+		return
+	}
+	if err := api.issueSession(w, r, user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось создать сессию")
+		return
+	}
+	preferences, _ := api.store.Preferences(ctx, user.ID)
+	writeJSON(w, http.StatusOK, AuthPayload{User: user, Preferences: preferences})
+}
+
+func (api *API) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Запрос отклонён")
+		return
+	}
+	if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" {
+		_ = api.store.DeleteSession(r.Context(), hashToken(cookie.Value))
+	}
+	api.clearSessionCookie(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (api *API) handleMe(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	preferences, _ := api.store.Preferences(r.Context(), user.ID)
+	writeJSON(w, http.StatusOK, AuthPayload{User: user, Preferences: preferences})
+}
+
+func (api *API) issueSession(w http.ResponseWriter, r *http.Request, userID int64) error {
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return err
+	}
+	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
+	expires := time.Now().UTC().Add(api.sessionTTL)
+	if err := api.store.CreateSession(r.Context(), userID, hashToken(token), expires); err != nil {
+		return err
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expires,
+		MaxAge:   int(api.sessionTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   api.secureCookies,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return nil
+}
+
+func (api *API) clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   api.secureCookies,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (api *API) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !sameOrigin(r) {
+			writeError(w, http.StatusForbidden, "Запрос отклонён")
+			return
+		}
+		user, err := api.userFromRequest(r)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusUnauthorized, "Требуется вход")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "Не удалось проверить сессию")
+			return
+		}
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+func (api *API) userFromRequest(r *http.Request) (User, error) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return User{}, ErrNotFound
+	}
+	return api.store.UserBySession(r.Context(), hashToken(cookie.Value))
+}
+
+func (api *API) optionalUserID(r *http.Request) int64 {
+	user, err := api.userFromRequest(r)
+	if err != nil {
+		return 0
+	}
+	return user.ID
+}
+
+func currentUser(r *http.Request) User {
+	user, _ := r.Context().Value(userContextKey).(User)
+	return user
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
+	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+		return errors.New("content type must be application/json")
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("body must contain a single json object")
+	}
+	return nil
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, errorResponse{Error: message})
+}
+
+func validEmail(email string) bool {
+	if len(email) > 254 || strings.ContainsAny(email, "\r\n") {
+		return false
+	}
+	address, err := mail.ParseAddress(email)
+	return err == nil && strings.EqualFold(address.Address, email)
+}
+
+func sameOrigin(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host)
+}
+
+func logMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		recorder := &responseRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+		if recorder.status == 0 {
+			recorder.status = http.StatusOK
+		}
+		if !strings.HasPrefix(r.URL.Path, "/assets/") {
+			log.Printf("%s %s %d %s", r.Method, r.URL.Path, recorder.status, time.Since(start).Round(time.Millisecond))
+		}
+	})
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Printf("panic: %v", recovered)
+				writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func openBrowser(target string) {
+	var command *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		command = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
+	case "darwin":
+		command = exec.Command("open", target)
+	default:
+		command = exec.Command("xdg-open", target)
+	}
+	if err := command.Start(); err != nil {
+		log.Printf("open browser: %v", err)
+	}
+}

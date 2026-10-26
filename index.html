@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#F7F4ED">
+  <meta name="description" content="ODIN — персональный сервис бронирования отелей. AI-подбор, локальные рекомендации и поездки, собранные под ваш вайб.">
+  <title>ODIN — один шаг до идеального отеля</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23F7F4ED'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%23D45A3A' stroke-width='4'/%3E%3Ccircle cx='43' cy='21' r='5' fill='%23D45A3A'/%3E%3C/svg%3E">
+  <link rel="preload" as="image" href="/assets/images/hotel-01.jpg">
+  <link rel="stylesheet" href="/assets/app.css?v=20261026">
+</head>
+<body>
+  <header class="site-header" id="siteHeader">
+    <div class="nav-shell">
+      <a class="brand" href="#" data-nav="home" aria-label="ODIN — на главную">
+        <span class="brand-mark" aria-hidden="true">
+          <span class="brand-ring"></span>
+          <span class="brand-dot"></span>
+        </span>
+        <span class="brand-word">ODIN</span>
+        <span class="brand-note">travel</span>
+      </a>
+
+      <nav class="main-nav" aria-label="Основная навигация">
+        <button type="button" class="nav-link is-active" data-nav="home">Главная</button>
+        <button type="button" class="nav-link" data-nav="search">Отели</button>
+        <button type="button" class="nav-link" data-nav="assistant">
+          AI-подбор
+          <span class="nav-spark" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="nav-link" data-nav="trips">Мои поездки</button>
+      </nav>
+
+      <div class="nav-actions">
+        <button type="button" class="nav-search" id="searchOpen" aria-label="Открыть поиск по сайту">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+          <span class="nav-search-label">Найти</span>
+          <kbd class="keycap">Ctrl K</kbd>
+        </button>
+
+        <button type="button" class="icon-button menu-theme-button" id="themeButton" aria-label="Настроить цвета меню" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a2.5 2.5 0 0 0 0-5H13a1.5 1.5 0 0 1 0-3h4.5A3.5 3.5 0 0 0 21 9.5C21 5.9 17 3 12 3Z"/><circle cx="7.5" cy="9" r="1"/><circle cx="11" cy="6.8" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>
+          <span class="nav-theme-label">Меню</span>
+        </button>
+
+        <button type="button" class="ai-nav-button" id="assistantButton">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/></svg>
+          <span>AI-консьерж</span>
+        </button>
+
+        <div class="account-wrap">
+          <button type="button" class="account-button" id="accountButton" aria-haspopup="menu" aria-expanded="false">
+            <span class="avatar" id="accountAvatar">Г</span>
+            <span class="account-label" id="accountLabel">Войти</span>
+          </button>
+          <div class="account-menu" id="accountMenu" role="menu" aria-label="Аккаунт">
+            <div class="account-menu-head">
+              <span class="avatar avatar-large" id="menuAvatar">Г</span>
+              <div class="account-menu-copy">
+                <strong id="menuName">Гость</strong>
+                <span id="menuEmail">Войдите, чтобы сохранять поездки</span>
+              </div>
+            </div>
+            <div class="account-menu-body">
+              <button type="button" class="menu-item" data-account-action="trips">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v11H4z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M4 13h16"/></svg>
+                Мои поездки
+              </button>
+              <button type="button" class="menu-item" data-account-action="favorites">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/></svg>
+                Избранное
+              </button>
+              <button type="button" class="menu-item" data-account-action="theme">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a2.5 2.5 0 0 0 0-5H13a1.5 1.5 0 0 1 0-3h4.5A3.5 3.5 0 0 0 21 9.5C21 5.9 17 3 12 3Z"/><circle cx="7.5" cy="9" r="1"/><circle cx="11" cy="6.8" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>
+                Настроить меню
+              </button>
+            </div>
+            <div class="account-menu-foot">
+              <button type="button" class="menu-item menu-item-danger" data-account-action="logout">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+                Выйти
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="icon-button mobile-menu-button" id="mobileMenuButton" aria-label="Открыть меню">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="view" id="homeView">
+      <section class="hero">
+        <div class="hero-orb hero-orb-one" aria-hidden="true"></div>
+        <div class="hero-orb hero-orb-two" aria-hidden="true"></div>
+        <div class="container">
+          <div class="hero-grid">
+            <div class="hero-copy">
+              <div class="eyebrow">
+                <span class="eyebrow-dot"></span>
+                Подбор отелей с локальным AI
+              </div>
+              <h1>Один шаг до <em>идеального</em> отеля.</h1>
+              <p class="hero-lead">От вдохновения до заселения — без десятков вкладок. Расскажите, каким должен быть отдых, а ODIN соберёт отель, даты и маршрут под вас.</p>
+              <div class="hero-proof">
+                <div class="avatar-stack" aria-hidden="true">
+                  <span>А</span><span>М</span><span>К</span>
+                </div>
+                <div>
+                  <strong>12 480 путешественников</strong>
+                  <span>уже нашли свой отель с ODIN</span>
+                </div>
+                <div class="proof-rating">
+                  <span class="stars">★★★★★</span>
+                  <strong>4.9</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="hero-visual">
+              <div class="hero-photo-main">
+                <img src="/assets/images/hotel-01.jpg" alt="Светлый бутик-отель с садом" width="880" height="1080">
+              </div>
+              <div class="hero-photo-small">
+                <img src="/assets/images/hotel-02.jpg" alt="Номер с мягким светом" width="420" height="520">
+              </div>
+              <div class="hero-rating-badge">
+                <span class="stars">★★★★★</span>
+                <strong>9.6</strong>
+                <span>The Senses Moscow</span>
+              </div>
+              <div class="hero-float-card">
+                <span class="float-spark">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/></svg>
+                </span>
+                <div>
+                  <span>Ваш вайб</span>
+                  <strong>тишина · зелень · кофе</strong>
+                </div>
+                <span class="float-match">98%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="search-wrap">
+            <form class="hero-search" id="heroSearch" novalidate>
+              <div class="search-field search-destination">
+                <span class="search-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg>
+                </span>
+                <div class="search-field-copy">
+                  <label for="searchDestination">Куда</label>
+                  <input id="searchDestination" type="text" placeholder="Москва, Сочи или «у моря»" list="destinationOptions" autocomplete="off">
+                </div>
+              </div>
+
+              <div class="search-field search-dates">
+                <span class="search-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M3 10h18"/></svg>
+                </span>
+                <div class="search-date-pair">
+                  <div class="search-field-copy">
+                    <label for="searchCheckIn">Заезд</label>
+                    <input id="searchCheckIn" type="date">
+                  </div>
+                  <span class="date-separator" aria-hidden="true"></span>
+                  <div class="search-field-copy">
+                    <label for="searchCheckOut">Выезд</label>
+                    <input id="searchCheckOut" type="date">
+                  </div>
+                </div>
+              </div>
+
+              <div class="search-field search-guests">
+                <span class="search-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.5a3 3 0 0 1 0 5.8"/><path d="M17.5 14.5A5.5 5.5 0 0 1 21 20"/></svg>
+                </span>
+                <div class="search-field-copy">
+                  <label for="searchGuests">Гости</label>
+                  <select id="searchGuests">
+                    <option value="1">1 гость</option>
+                    <option value="2" selected>2 гостя</option>
+                    <option value="3">3 гостя</option>
+                    <option value="4">4 гостя</option>
+                  </select>
+                </div>
+              </div>
+
+              <button type="submit" class="primary-button search-submit">
+                <span>Найти отель</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+              </button>
+            </form>
+
+            <div class="quick-vibes">
+              <span class="quick-vibes-label">Или начните с вайба:</span>
+              <button type="button" class="vibe-chip" data-vibe="тишина">Тишина и природа</button>
+              <button type="button" class="vibe-chip" data-vibe="дизайн">Дизайн и архитектура</button>
+              <button type="button" class="vibe-chip" data-vibe="море">Море и спа</button>
+              <button type="button" class="vibe-chip" data-vibe="завтраки">Завтраки и кофе</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section destinations-section">
+        <div class="container">
+          <div class="section-head">
+            <div>
+              <span class="section-kicker">Вдохновение</span>
+              <h2>Куда хочется?</h2>
+              <p>Шесть направлений, в которые хочется вернуться — или остаться чуть дольше.</p>
+            </div>
+            <div class="section-controls">
+              <button type="button" class="round-button" id="destinationsPrev" aria-label="Предыдущие направления">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <button type="button" class="round-button" id="destinationsNext" aria-label="Следующие направления">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="destination-track" id="destinationsTrack" aria-live="polite">
+            <div class="destination-card skeleton-card"></div>
+            <div class="destination-card skeleton-card"></div>
+            <div class="destination-card skeleton-card"></div>
+            <div class="destination-card skeleton-card"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section featured-section">
+        <div class="container">
+          <div class="section-head">
+            <div>
+              <span class="section-kicker">Подобрано для вас</span>
+              <h2>Отели с характером</h2>
+              <p>Не просто переночевать. Проснуться там, где хочется остаться.</p>
+            </div>
+            <button type="button" class="text-button" data-nav="search">
+              Все отели
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+          <div class="hotel-grid" id="featuredGrid" aria-live="polite">
+            <div class="hotel-card skeleton-card"></div>
+            <div class="hotel-card skeleton-card"></div>
+            <div class="hotel-card skeleton-card"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section ai-section">
+        <div class="container">
+          <div class="ai-panel">
+            <div class="ai-panel-copy">
+              <span class="section-kicker section-kicker-light">ODIN AI</span>
+              <h2>Опишите поездку.<br>AI соберёт остальное.</h2>
+              <p>Тихий отель у моря, завтраки до полудня, кофейня без толпы — просто скажите, что важно. Локальная модель отвечает сразу и знает наши отели.</p>
+              <form class="ai-prompt-form" id="aiPromptForm">
+                <input id="aiPromptInput" type="text" maxlength="240" placeholder="Например: тихий отель для двоих у моря" aria-label="Опишите поездку">
+                <button type="submit" class="ai-prompt-submit" aria-label="Подобрать с AI">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+                </button>
+              </form>
+              <div class="ai-panel-meta">
+                <span class="status-dot"></span>
+                Qwen 2.5 3B · работает локально
+                <span class="meta-divider"></span>
+                без передачи данных наружу
+              </div>
+            </div>
+
+            <div class="ai-chat-preview" aria-hidden="true">
+              <div class="preview-top">
+                <span class="preview-avatar">
+                  <svg viewBox="0 0 24 24"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/></svg>
+                </span>
+                <div>
+                  <strong>Odin AI</strong>
+                  <span><span class="status-dot"></span> на связи</span>
+                </div>
+                <span class="preview-local">local</span>
+              </div>
+              <div class="preview-messages">
+                <div class="preview-bubble preview-bubble-user">Хочу тихий отель у моря, но без пафоса. И чтобы завтраки были до 12.</div>
+                <div class="preview-bubble preview-bubble-ai">Тогда Cedar &amp; Sea: лес, море в 7 минутах и семейные номера с кухней. Завтраки до 12:00, рейтинг 9.5.</div>
+                <div class="preview-hotel">
+                  <img src="/assets/images/hotel-12.jpg" alt="">
+                  <div>
+                    <strong>Cedar &amp; Sea</strong>
+                    <span>Сочи · от 16 800 ₽</span>
+                  </div>
+                  <span class="preview-match">96%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats-section">
+        <div class="container">
+          <div class="stats-grid">
+            <div class="stat-item">
+              <strong id="statHotels">10</strong>
+              <span>отобранных отелей</span>
+            </div>
+            <div class="stat-item">
+              <strong id="statDestinations">6</strong>
+              <span>направлений</span>
+            </div>
+            <div class="stat-item">
+              <strong id="statRating">9.4</strong>
+              <span>средний рейтинг</span>
+            </div>
+            <div class="stat-item">
+              <strong>24/7</strong>
+              <span>AI-консьерж</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="view page-view hidden" id="searchView">
+      <div class="container">
+        <div class="page-top">
+          <button type="button" class="back-button" id="searchBack">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+            На главную
+          </button>
+          <div class="page-heading">
+            <span class="section-kicker" id="searchKicker">Поиск</span>
+            <h1 id="searchTitle">Отели</h1>
+            <p id="searchSummary">Подбираем варианты под ваши даты.</p>
+          </div>
+        </div>
+
+        <div class="search-toolbar">
+          <div class="filter-chips" id="filterChips" role="group" aria-label="Фильтр по вайбу">
+            <button type="button" class="filter-chip is-active" data-filter-tag="">Все</button>
+            <button type="button" class="filter-chip" data-filter-tag="тишина">Тишина</button>
+            <button type="button" class="filter-chip" data-filter-tag="дизайн">Дизайн</button>
+            <button type="button" class="filter-chip" data-filter-tag="море">Море</button>
+            <button type="button" class="filter-chip" data-filter-tag="завтраки">Завтраки</button>
+            <button type="button" class="filter-chip" data-filter-tag="горы">Горы</button>
+          </div>
+          <div class="toolbar-selects">
+            <label class="select-field">
+              <span>Цена</span>
+              <select id="priceFilter">
+                <option value="0">Любая</option>
+                <option value="10000">до 10 000 ₽</option>
+                <option value="15000">до 15 000 ₽</option>
+                <option value="20000">до 20 000 ₽</option>
+                <option value="30000">до 30 000 ₽</option>
+              </select>
+            </label>
+            <label class="select-field">
+              <span>Сортировка</span>
+              <select id="sortSelect">
+                <option value="">Рекомендуемые</option>
+                <option value="price_asc">Сначала дешевле</option>
+                <option value="price_desc">Сначала дороже</option>
+                <option value="rating">По рейтингу</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <p class="search-meta" id="searchMeta"></p>
+        <div class="hotel-grid search-grid" id="searchGrid"></div>
+        <div class="empty-state hidden" id="searchEmpty">
+          <span class="empty-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+          </span>
+          <h3>Ничего не нашлось</h3>
+          <p>Попробуйте другой вайб или сдвиньте фильтр цены.</p>
+          <button type="button" class="secondary-button" id="resetFilters">Сбросить фильтры</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="view page-view hidden" id="hotelView">
+      <div class="container">
+        <button type="button" class="back-button" id="hotelBack">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          Все отели
+        </button>
+        <div id="hotelContent"></div>
+      </div>
+    </section>
+
+    <section class="view page-view hidden" id="tripsView">
+      <div class="container">
+        <div class="page-heading trips-heading">
+          <span class="section-kicker">Личный кабинет</span>
+          <h1>Мои поездки</h1>
+          <p>Брони, избранные отели и всё, что ждёт впереди.</p>
+        </div>
+        <div class="segmented" id="tripsTabs">
+          <button type="button" class="segment is-active" data-trips-tab="upcoming">Предстоящие</button>
+          <button type="button" class="segment" data-trips-tab="past">Прошедшие</button>
+          <button type="button" class="segment" data-trips-tab="favorites">Избранное</button>
+        </div>
+        <div id="tripsContent" class="trips-content"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="#" data-nav="home" aria-label="ODIN — на главную">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="brand-ring"></span>
+            <span class="brand-dot"></span>
+          </span>
+          <span class="brand-word">ODIN</span>
+        </a>
+        <p>Один шаг до идеального отеля. AI, локальные знания и человеческое гостеприимство в одном сервисе.</p>
+      </div>
+      <div class="footer-column">
+        <span>Сервис</span>
+        <button type="button" data-nav="search">Найти отель</button>
+        <button type="button" data-nav="assistant">AI-подбор</button>
+        <button type="button" data-nav="trips">Мои поездки</button>
+      </div>
+      <div class="footer-column">
+        <span>Направления</span>
+        <button type="button" data-destination="moscow">Москва</button>
+        <button type="button" data-destination="saint-petersburg">Санкт-Петербург</button>
+        <button type="button" data-destination="sochi">Сочи</button>
+        <button type="button" data-destination="altai">Алтай</button>
+      </div>
+      <div class="footer-note">
+        <span class="footer-ai-badge"><span class="status-dot"></span> AI работает локально</span>
+        <p>Демо-платежи. Данные хранятся на вашем сервере. © 2026 ODIN.</p>
+      </div>
+    </div>
+  </footer>
+
+  <button type="button" class="assistant-fab" id="assistantFab" aria-label="Открыть AI-консьержа">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/></svg>
+    <span>AI</span>
+  </button>
+
+  <div class="popover theme-panel" id="themePanel" aria-hidden="true">
+    <div class="popover-head">
+      <div>
+        <strong>Цвета меню</strong>
+        <span>Настройте панель под свой отель</span>
+      </div>
+      <button type="button" class="icon-button" id="themeClose" aria-label="Закрыть настройки меню">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="theme-section">
+      <span class="theme-label">Акцент</span>
+      <div class="swatch-row" id="accentSwatches">
+        <button type="button" class="swatch" data-accent="#D45A3A" style="--swatch:#D45A3A" aria-label="Терракота"></button>
+        <button type="button" class="swatch" data-accent="#2F6B4F" style="--swatch:#2F6B4F" aria-label="Лес"></button>
+        <button type="button" class="swatch" data-accent="#2F5FE3" style="--swatch:#2F5FE3" aria-label="Кобальт"></button>
+        <button type="button" class="swatch" data-accent="#7C3E66" style="--swatch:#7C3E66" aria-label="Слива"></button>
+        <button type="button" class="swatch" data-accent="#B67819" style="--swatch:#B67819" aria-label="Янтарь"></button>
+        <label class="swatch swatch-custom" aria-label="Свой акцент">
+          <input type="color" id="accentCustom" value="#D45A3A">
+          <span>+</span>
+        </label>
+      </div>
+    </div>
+    <div class="theme-section">
+      <span class="theme-label">Фон меню</span>
+      <div class="swatch-row" id="menuSwatches">
+        <button type="button" class="swatch" data-menu="#FBF7EF" style="--swatch:#FBF7EF" aria-label="Сливочный"></button>
+        <button type="button" class="swatch" data-menu="#EAF0E8" style="--swatch:#EAF0E8" aria-label="Шалфей"></button>
+        <button type="button" class="swatch" data-menu="#E8EFF5" style="--swatch:#E8EFF5" aria-label="Небо"></button>
+        <button type="button" class="swatch" data-menu="#F4E9E7" style="--swatch:#F4E9E7" aria-label="Пудра"></button>
+        <button type="button" class="swatch" data-menu="#F2EBDD" style="--swatch:#F2EBDD" aria-label="Песок"></button>
+        <label class="swatch swatch-custom" aria-label="Свой фон меню">
+          <input type="color" id="menuCustom" value="#FBF7EF">
+          <span>+</span>
+        </label>
+      </div>
+    </div>
+    <div class="theme-preview">
+      <span>Предпросмотр</span>
+      <div class="theme-preview-nav">
+        <span class="preview-logo">ODIN</span>
+        <span>Отели</span>
+        <span>AI-подбор</span>
+        <span class="preview-cta">Найти</span>
+      </div>
+    </div>
+    <div class="theme-panel-foot">
+      <span id="themeStatus">Изменения сохраняются автоматически</span>
+      <button type="button" class="text-button small" id="themeReset">Сбросить</button>
+    </div>
+  </div>
+
+  <div class="mobile-menu" id="mobileMenu" aria-hidden="true">
+    <div class="mobile-menu-head">
+      <span class="brand-word">ODIN</span>
+      <button type="button" class="icon-button" id="mobileMenuClose" aria-label="Закрыть меню">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <nav class="mobile-nav" aria-label="Мобильная навигация">
+      <button type="button" data-nav="home">Главная</button>
+      <button type="button" data-nav="search">Отели</button>
+      <button type="button" data-nav="assistant">AI-подбор</button>
+      <button type="button" data-nav="trips">Мои поездки</button>
+    </nav>
+    <div class="mobile-menu-actions">
+      <button type="button" class="secondary-button" id="mobileSearchOpen">Поиск по сайту</button>
+      <button type="button" class="secondary-button" id="mobileThemeOpen">Настроить меню</button>
+      <button type="button" class="primary-button" id="mobileAssistantOpen">AI-консьерж</button>
+    </div>
+    <div class="mobile-menu-foot">
+      <span class="status-dot"></span>
+      Локальная AI-модель · онлайн
+    </div>
+  </div>
+
+  <div class="modal-layer" id="commandPalette" aria-hidden="true">
+    <div class="modal-backdrop" data-close="command"></div>
+    <div class="command-panel" role="dialog" aria-modal="true" aria-labelledby="commandTitle">
+      <h2 class="sr-only" id="commandTitle">Поиск по ODIN</h2>
+      <div class="command-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+        <input id="commandInput" type="text" placeholder="Отель, город или действие..." autocomplete="off" aria-label="Поиск по сайту">
+        <kbd class="keycap">Esc</kbd>
+      </div>
+      <div class="command-results" id="commandResults" role="listbox" aria-label="Результаты поиска"></div>
+      <div class="command-foot">
+        <span><kbd class="keycap">↑</kbd><kbd class="keycap">↓</kbd> навигация</span>
+        <span><kbd class="keycap">↵</kbd> выбрать</span>
+        <span class="command-foot-right">ODIN search</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-layer" id="authModal" aria-hidden="true">
+    <div class="modal-backdrop" data-close="auth"></div>
+    <div class="auth-panel" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button type="button" class="icon-button auth-close" id="authClose" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+      </button>
+      <div class="auth-brand">
+        <span class="brand-mark" aria-hidden="true"><span class="brand-ring"></span><span class="brand-dot"></span></span>
+        <span class="brand-word">ODIN</span>
+      </div>
+      <div class="auth-heading">
+        <span class="section-kicker" id="authKicker">Личный кабинет</span>
+        <h2 id="authTitle">С возвращением</h2>
+        <p id="authSubtitle">Войдите, чтобы бронировать и сохранять поездки.</p>
+      </div>
+      <p class="auth-notice hidden" id="authNotice"></p>
+      <div class="auth-tabs" role="tablist" aria-label="Вход или регистрация">
+        <button type="button" class="auth-tab is-active" data-auth-mode="login" role="tab" aria-selected="true">Вход</button>
+        <button type="button" class="auth-tab" data-auth-mode="register" role="tab" aria-selected="false">Регистрация</button>
+      </div>
+      <div class="auth-error hidden" id="authError" role="alert"></div>
+      <form class="auth-form" id="loginForm" novalidate>
+        <label class="form-field">
+          <span>Email</span>
+          <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
+        </label>
+        <label class="form-field">
+          <span>Пароль</span>
+          <input id="loginPassword" type="password" placeholder="Ваш пароль" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="primary-button full-width" id="loginSubmit">Войти</button>
+      </form>
+      <form class="auth-form hidden" id="registerForm" novalidate>
+        <label class="form-field">
+          <span>Как вас зовут</span>
+          <input id="registerName" type="text" placeholder="Анна Смирнова" autocomplete="name" required>
+        </label>
+        <label class="form-field">
+          <span>Email</span>
+          <input id="registerEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
+        </label>
+        <label class="form-field">
+          <span>Пароль</span>
+          <input id="registerPassword" type="password" placeholder="Минимум 8 символов" autocomplete="new-password" required>
+        </label>
+        <button type="submit" class="primary-button full-width" id="registerSubmit">Создать аккаунт</button>
+      </form>
+      <div class="auth-divider"><span>или</span></div>
+      <button type="button" class="secondary-button full-width" id="demoLoginButton">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/></svg>
+        Войти в демо-аккаунт
+      </button>
+      <p class="auth-footnote">Демо: <button type="button" id="demoFill">demo@odin.travel</button> · пароль <span>odin-demo-2026</span></p>
+    </div>
+  </div>
+
+  <div class="modal-layer" id="bookingModal" aria-hidden="true">
+    <div class="modal-backdrop" data-close="booking"></div>
+    <div class="booking-panel" role="dialog" aria-modal="true" aria-labelledby="bookingTitle">
+      <div class="booking-head">
+        <div>
+          <span class="section-kicker">Бронирование</span>
+          <h2 id="bookingTitle">Забронировать</h2>
+        </div>
+        <button type="button" class="icon-button" id="bookingClose" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="booking-steps" id="bookingSteps">
+        <div class="booking-step is-active" data-step-indicator="1"><span>1</span>Детали</div>
+        <div class="booking-step" data-step-indicator="2"><span>2</span>Гость</div>
+        <div class="booking-step" data-step-indicator="3"><span>3</span>Оплата</div>
+      </div>
+
+      <form id="bookingForm" novalidate>
+        <div class="booking-step-panel" data-step="1">
+          <div class="booking-room-summary" id="bookingRoomSummary"></div>
+          <div class="booking-grid">
+            <label class="form-field">
+              <span>Заезд</span>
+              <input id="bookingCheckIn" type="date" required>
+            </label>
+            <label class="form-field">
+              <span>Выезд</span>
+              <input id="bookingCheckOut" type="date" required>
+            </label>
+          </div>
+          <label class="form-field">
+            <span>Гости</span>
+            <select id="bookingGuests">
+              <option value="1">1 гость</option>
+              <option value="2" selected>2 гостя</option>
+              <option value="3">3 гостя</option>
+              <option value="4">4 гостя</option>
+            </select>
+          </label>
+          <div class="booking-total">
+            <span>Итого</span>
+            <strong id="bookingTotalStep1">—</strong>
+          </div>
+          <div class="booking-error hidden" id="bookingError1"></div>
+          <div class="booking-actions">
+            <button type="button" class="secondary-button" data-close="booking">Отмена</button>
+            <button type="button" class="primary-button" id="bookingNext1">Продолжить</button>
+          </div>
+        </div>
+
+        <div class="booking-step-panel hidden" data-step="2">
+          <label class="form-field">
+            <span>Имя и фамилия</span>
+            <input id="bookingName" type="text" placeholder="Анна Смирнова" autocomplete="name" required>
+          </label>
+          <label class="form-field">
+            <span>Email</span>
+            <input id="bookingEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
+          </label>
+          <label class="form-field">
+            <span>Телефон</span>
+            <input id="bookingPhone" type="tel" placeholder="+7 999 120-44-08" autocomplete="tel" required>
+          </label>
+          <div class="booking-error hidden" id="bookingError2"></div>
+          <div class="booking-actions">
+            <button type="button" class="secondary-button" id="bookingBack2">Назад</button>
+            <button type="button" class="primary-button" id="bookingNext2">К оплате</button>
+          </div>
+        </div>
+
+        <div class="booking-step-panel hidden" data-step="3">
+          <div class="payment-summary">
+            <div>
+              <span id="paymentHotel">Отель</span>
+              <strong id="paymentRoom">Номер</strong>
+            </div>
+            <span id="paymentDates">—</span>
+          </div>
+          <label class="form-field">
+            <span>Номер карты</span>
+            <input id="cardNumber" type="text" inputmode="numeric" placeholder="4242 4242 4242 4242" autocomplete="cc-number" maxlength="19">
+          </label>
+          <div class="booking-grid">
+            <label class="form-field">
+              <span>Срок</span>
+              <input id="cardExpiry" type="text" inputmode="numeric" placeholder="MM / YY" autocomplete="cc-exp" maxlength="7">
+            </label>
+            <label class="form-field">
+              <span>CVC</span>
+              <input id="cardCvc" type="text" inputmode="numeric" placeholder="123" autocomplete="cc-csc" maxlength="4">
+            </label>
+          </div>
+          <div class="demo-payment-note">Демо-оплата: используйте 4242 4242 4242 4242 и любые будущие даты.</div>
+          <div class="booking-total booking-total-final">
+            <span>К оплате</span>
+            <strong id="bookingTotalStep3">—</strong>
+          </div>
+          <div class="booking-error hidden" id="bookingError3"></div>
+          <div class="booking-actions">
+            <button type="button" class="secondary-button" id="bookingBack3">Назад</button>
+            <button type="submit" class="primary-button" id="bookingSubmit">Оплатить и забронировать</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="booking-success hidden" id="bookingSuccess">
+        <span class="success-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+        </span>
+        <h3>Готово, поездка забронирована</h3>
+        <p id="bookingSuccessText">Подтверждение уже в личном кабинете.</p>
+        <div class="success-code">
+          <span>Код брони</span>
+          <strong id="bookingSuccessCode">—</strong>
+        </div>
+        <button type="button" class="primary-button full-width" id="bookingGoTrips">Перейти к поездкам</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-scrim" id="assistantScrim"></div>
+  <aside class="assistant-drawer" id="assistantDrawer" aria-hidden="true" aria-labelledby="assistantTitle">
+    <div class="assistant-head">
+      <div class="assistant-identity">
+        <span class="assistant-avatar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/></svg>
+        </span>
+        <div>
+          <h2 id="assistantTitle">Odin AI</h2>
+          <span class="assistant-status"><span class="status-dot" id="assistantStatusDot"></span><span id="assistantStatusText">подключаю модель...</span></span>
+        </div>
+      </div>
+      <div class="assistant-head-actions">
+        <button type="button" class="icon-button" id="assistantClear" aria-label="Очистить диалог">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/></svg>
+        </button>
+        <button type="button" class="icon-button" id="assistantClose" aria-label="Закрыть AI-консьержа">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="assistant-messages" id="assistantMessages" aria-live="polite"></div>
+    <div class="assistant-suggestions" id="assistantSuggestions">
+      <button type="button" class="suggestion-chip" data-prompt="Подбери тихий отель у моря для двоих">Тихий отель у моря</button>
+      <button type="button" class="suggestion-chip" data-prompt="Где пить кофе в Москве без толпы?">Кофе в Москве</button>
+      <button type="button" class="suggestion-chip" data-prompt="Куда поехать на выходные завтраками и архитектурой?">Выходные с архитектурой</button>
+    </div>
+    <form class="assistant-form" id="assistantForm">
+      <input id="assistantInput" type="text" maxlength="600" placeholder="Спросите про отель, город или маршрут..." autocomplete="off" aria-label="Сообщение AI-консьержу">
+      <button type="submit" id="assistantSend" aria-label="Отправить сообщение">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+    <p class="assistant-footnote">Локальная модель может ошибаться. Бронирование подтверждается на сервере.</p>
+  </aside>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+
+  <datalist id="destinationOptions"></datalist>
+
+  <script src="/assets/app.js?v=20261026"></script>
+</body>
+</html>
