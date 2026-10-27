@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -76,10 +77,29 @@ type preferencesRequest struct {
 	MenuTint string `json:"menuTint"`
 }
 
+// flexibleString tolerates clients that accidentally send a non-string value
+// (for example a click event object) instead of failing the whole request.
+type flexibleString string
+
+func (value *flexibleString) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || string(trimmed) == "null" || trimmed[0] != '"' {
+		*value = ""
+		return nil
+	}
+	var decoded string
+	if err := json.Unmarshal(trimmed, &decoded); err != nil {
+		return err
+	}
+	*value = flexibleString(decoded)
+	return nil
+}
+
 type chatRequest struct {
-	Message         string     `json:"message"`
-	DestinationSlug string     `json:"destinationSlug"`
-	History         []ChatTurn `json:"history"`
+	Message         string         `json:"message"`
+	DestinationSlug flexibleString `json:"destinationSlug"`
+	HotelSlug       flexibleString `json:"hotelSlug"`
+	History         []ChatTurn     `json:"history"`
 }
 
 type errorResponse struct {
@@ -225,7 +245,10 @@ func routes(api *API, cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/home", api.handleHome)
 	mux.HandleFunc("GET /api/destinations", api.handleDestinations)
 	mux.HandleFunc("GET /api/search", api.handleSearch)
+	mux.HandleFunc("GET /api/moods", api.handleMoods)
+	mux.HandleFunc("GET /api/weather", api.handleWeather)
 	mux.HandleFunc("GET /api/hotels/{slug}", api.handleHotel)
+	mux.HandleFunc("GET /api/pois/{id}", api.handlePOI)
 	mux.HandleFunc("GET /api/trips", api.requireAuth(api.handleTrips))
 	mux.HandleFunc("POST /api/bookings", api.requireAuth(api.handleCreateBooking))
 	mux.HandleFunc("POST /api/bookings/{id}/cancel", api.requireAuth(api.handleCancelBooking))
@@ -312,20 +335,76 @@ func (api *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if value := query.Get("maxPrice"); value != "" {
 		maxPrice, _ = strconv.Atoi(value)
 	}
+	minPrice := 0
+	if value := query.Get("minPrice"); value != "" {
+		minPrice, _ = strconv.Atoi(value)
+	}
+	minRating := 0.0
+	if value := query.Get("minRating"); value != "" {
+		minRating, _ = strconv.ParseFloat(value, 64)
+	}
+	lat, _ := strconv.ParseFloat(query.Get("lat"), 64)
+	lng, _ := strconv.ParseFloat(query.Get("lng"), 64)
+	radius, _ := strconv.ParseFloat(query.Get("radius"), 64)
+
+	tags := append([]string{}, query["tags"]...)
+	if len(query["tags"]) == 0 && len(query["tag[]"]) > 0 {
+		tags = append(tags, query["tag[]"]...)
+	}
 
 	result, err := api.store.Search(r.Context(), api.optionalUserID(r), SearchParams{
 		Query:       query.Get("q"),
 		Destination: query.Get("destination"),
 		Guests:      guests,
 		MaxPrice:    maxPrice,
+		MinPrice:    minPrice,
+		MinRating:   minRating,
 		Tag:         query.Get("tag"),
+		Tags:        tags,
+		Mood:        query.Get("mood"),
 		Sort:        query.Get("sort"),
+		Insured:     queryBool(query, "insured"),
+		Guides:      queryBool(query, "guides"),
+		Parking:     queryBool(query, "parking"),
+		Pool:        queryBool(query, "pool"),
+		Soundproof:  queryBool(query, "soundproof"),
+		Week:        queryBool(query, "week"),
+		Discount:    queryBool(query, "discount"),
+		Lat:         lat,
+		Lng:         lng,
+		RadiusKm:    radius,
+		CheckIn:     query.Get("checkIn"),
+		CheckOut:    query.Get("checkOut"),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Не удалось выполнить поиск")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func queryBool(query url.Values, key string) bool {
+	value := strings.ToLower(strings.TrimSpace(query.Get(key)))
+	return value == "1" || value == "true" || value == "on" || value == "yes"
+}
+
+func (api *API) handleMoods(w http.ResponseWriter, r *http.Request) {
+	hotels, err := api.store.allHotelCards(r.Context(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось загрузить подборки")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"moods": MoodsWithCounts(hotels),
+		"tags":  TagCatalog,
+	})
+}
+
+func (api *API) handleWeather(w http.ResponseWriter, r *http.Request) {
+	destination := strings.TrimSpace(r.URL.Query().Get("destination"))
+	date := strings.TrimSpace(r.URL.Query().Get("date"))
+	info := api.store.Weather(destination, date)
+	writeJSON(w, http.StatusOK, info)
 }
 
 func (api *API) handleHotel(w http.ResponseWriter, r *http.Request) {
@@ -352,6 +431,24 @@ func (api *API) handleHotel(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Не удалось загрузить отель")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (api *API) handlePOI(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Некорректное место")
+		return
+	}
+	detail, err := api.store.POIDetail(r.Context(), api.optionalUserID(r), id)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusNotFound, "Место не найдено")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось загрузить место")
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
@@ -696,7 +793,6 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
 		return err
 	}
@@ -756,7 +852,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)")
 		next.ServeHTTP(w, r)
 	})
 }

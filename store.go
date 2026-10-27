@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,8 +27,8 @@ var (
 )
 
 const (
-	defaultAccent   = "#D45A3A"
-	defaultMenuTint = "#FBF7EF"
+	defaultAccent   = "#1F4BDB"
+	defaultMenuTint = "#FFFFFF"
 )
 
 type Store struct {
@@ -185,6 +187,10 @@ func (s *Store) migrate() error {
 			price_level INTEGER NOT NULL,
 			sort_order INTEGER NOT NULL DEFAULT 0
 		)`,
+		`CREATE TABLE IF NOT EXISTS seed_meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
 	}
 
 	for _, statement := range statements {
@@ -192,7 +198,45 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("migration: %w", err)
 		}
 	}
+
+	if err := s.ensureColumn("hotels", "meta_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("pois", "minutes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("hotels", "capacity_hint", "INTEGER NOT NULL DEFAULT 2"); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (s *Store) ensureColumn(table, column, definition string) error {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
+	return err
 }
 
 func (s *Store) FindUserByEmail(ctx context.Context, email string) (User, error) {
@@ -344,7 +388,39 @@ func (s *Store) Home(ctx context.Context, userID int64) (HomePayload, error) {
 		return HomePayload{}, err
 	}
 
-	return HomePayload{Destinations: destinations, Featured: featured, Stats: stats}, nil
+	allHotels, err := s.allHotelCards(ctx, favoriteIDs)
+	if err != nil {
+		return HomePayload{}, err
+	}
+	for index := range featured {
+		if featured[index].Meta.TagSlugs == nil {
+			featured[index].Meta = decodeHotelMeta("{}")
+		}
+	}
+
+	deals := make([]HotelCard, 0, 6)
+	for _, hotel := range allHotels {
+		if hotel.Meta.Discount > 0 {
+			deals = append(deals, hotel)
+		}
+	}
+	sort.SliceStable(deals, func(i, j int) bool {
+		if deals[i].Meta.Discount != deals[j].Meta.Discount {
+			return deals[i].Meta.Discount > deals[j].Meta.Discount
+		}
+		return deals[i].Rating > deals[j].Rating
+	})
+	if len(deals) > 6 {
+		deals = deals[:6]
+	}
+
+	return HomePayload{
+		Destinations: destinations,
+		Featured:     featured,
+		Deals:        deals,
+		Moods:        MoodsWithCounts(allHotels),
+		Stats:        stats,
+	}, nil
 }
 
 func (s *Store) destinations(ctx context.Context) ([]Destination, error) {
@@ -382,7 +458,8 @@ func (s *Store) featuredHotels(ctx context.Context, favoriteIDs map[int64]bool) 
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT h.id, h.slug, h.name, d.city, d.country, d.slug, h.image, h.address,
 		        h.short_description, h.rating, h.reviews_count,
-		        COALESCE(MIN(r.price), h.price_per_night), h.vibe_tags_json, h.featured
+		        COALESCE(MIN(r.price), h.price_per_night), h.vibe_tags_json, h.featured,
+		        h.meta_json, h.amenities_json, COALESCE(MAX(r.capacity), 2)
 		 FROM hotels h
 		 JOIN destinations d ON d.id = h.destination_id
 		 LEFT JOIN rooms r ON r.hotel_id = h.id
@@ -398,83 +475,322 @@ func (s *Store) featuredHotels(ctx context.Context, favoriteIDs map[int64]bool) 
 	return scanHotelCards(rows, favoriteIDs)
 }
 
-func (s *Store) Search(ctx context.Context, userID int64, params SearchParams) (SearchResult, error) {
-	favoriteIDs, _ := s.favoriteSet(ctx, userID)
-	where := []string{"1 = 1"}
-	args := make([]any, 0)
-
-	if strings.TrimSpace(params.Query) != "" {
-		query := "%" + strings.TrimSpace(params.Query) + "%"
-		where = append(where, `(h.name LIKE ? OR d.city LIKE ? OR h.short_description LIKE ? OR h.vibe_tags_json LIKE ?)`)
-		args = append(args, query, query, query, query)
-	}
-	if strings.TrimSpace(params.Destination) != "" {
-		where = append(where, `d.slug = ?`)
-		args = append(args, strings.TrimSpace(params.Destination))
-	}
-	if params.Guests > 0 {
-		where = append(where, `EXISTS (SELECT 1 FROM rooms rr WHERE rr.hotel_id = h.id AND rr.capacity >= ?)`)
-		args = append(args, params.Guests)
-	}
-	if params.MaxPrice > 0 {
-		where = append(where, `h.price_per_night <= ?`)
-		args = append(args, params.MaxPrice)
-	}
-	if strings.TrimSpace(params.Tag) != "" {
-		where = append(where, `(h.vibe_tags_json LIKE ? OR h.amenities_json LIKE ?)`)
-		tag := "%" + strings.TrimSpace(params.Tag) + "%"
-		args = append(args, tag, tag)
-	}
-
-	orderBy := "h.featured DESC, h.rating DESC"
-	switch params.Sort {
-	case "price_asc":
-		orderBy = "COALESCE(MIN(r.price), h.price_per_night) ASC"
-	case "price_desc":
-		orderBy = "COALESCE(MIN(r.price), h.price_per_night) DESC"
-	case "rating":
-		orderBy = "h.rating DESC"
-	}
-
-	query := `
-		SELECT h.id, h.slug, h.name, d.city, d.country, d.slug, h.image, h.address,
-		       h.short_description, h.rating, h.reviews_count,
-		       COALESCE(MIN(r.price), h.price_per_night), h.vibe_tags_json, h.featured
-		FROM hotels h
-		JOIN destinations d ON d.id = h.destination_id
-		LEFT JOIN rooms r ON r.hotel_id = h.id
-		WHERE ` + strings.Join(where, " AND ") + `
-		GROUP BY h.id
-		ORDER BY ` + orderBy + `
-		LIMIT 60`
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
+func (s *Store) allHotelCards(ctx context.Context, favoriteIDs map[int64]bool) ([]HotelCard, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT h.id, h.slug, h.name, d.city, d.country, d.slug, h.image, h.address,
+		        h.short_description, h.rating, h.reviews_count,
+		        COALESCE(MIN(r.price), h.price_per_night), h.vibe_tags_json, h.featured,
+		        h.meta_json, h.amenities_json, COALESCE(MAX(r.capacity), 2)
+		 FROM hotels h
+		 JOIN destinations d ON d.id = h.destination_id
+		 LEFT JOIN rooms r ON r.hotel_id = h.id
+		 GROUP BY h.id
+		 ORDER BY h.sort_order, h.id`,
+	)
 	if err != nil {
-		return SearchResult{}, err
+		return nil, err
 	}
 	defer rows.Close()
+	return scanHotelCards(rows, favoriteIDs)
+}
 
-	hotels, err := scanHotelCards(rows, favoriteIDs)
+func (s *Store) Search(ctx context.Context, userID int64, params SearchParams) (SearchResult, error) {
+	favoriteIDs, _ := s.favoriteSet(ctx, userID)
+	hotels, err := s.allHotelCards(ctx, favoriteIDs)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	return SearchResult{Hotels: hotels, Total: len(hotels), Query: params.Query}, nil
+
+	explicitTags := NormalizeTags(append([]string{params.Tag}, params.Tags...))
+	inferredTags := InferTags(params.Query)
+	moodSlug := strings.TrimSpace(params.Mood)
+	if _, ok := moodBySlug[moodSlug]; !ok {
+		moodSlug = ""
+	}
+	if moodSlug == "" && params.Query != "" {
+		moodSlug = InferMood(params.Query)
+	}
+	mood := moodBySlug[moodSlug]
+
+	destinationSlug := strings.TrimSpace(params.Destination)
+	if destinationSlug == "" && strings.TrimSpace(params.Query) != "" {
+		if detected, detectErr := s.DetectDestination(ctx, params.Query); detectErr == nil {
+			destinationSlug = detected.Slug
+		}
+	}
+
+	queryTokens := searchTokens(params.Query)
+	hasIntent := len(inferredTags) > 0 || moodSlug != "" || destinationSlug != ""
+
+	base := make([]HotelCard, 0, len(hotels))
+	for _, hotel := range hotels {
+		if destinationSlug != "" && hotel.DestinationSlug != destinationSlug {
+			continue
+		}
+		if params.Guests > 0 && hotel.Capacity < params.Guests {
+			continue
+		}
+		if params.MaxPrice > 0 && hotel.PriceFrom > params.MaxPrice {
+			continue
+		}
+		if params.MinPrice > 0 && hotel.PriceFrom < params.MinPrice {
+			continue
+		}
+		if params.MinRating > 0 && hotel.Rating < params.MinRating {
+			continue
+		}
+		if params.Insured && !hotel.Meta.Insured {
+			continue
+		}
+		if params.Guides && !hotel.Meta.Guides {
+			continue
+		}
+		if params.Parking && !hotel.Meta.Parking {
+			continue
+		}
+		if params.Pool && !hotel.Meta.Pool {
+			continue
+		}
+		if params.Soundproof && !hotel.Meta.Soundproof {
+			continue
+		}
+		if params.Discount && !containsString(hotel.Meta.TagSlugs, "skidka") {
+			continue
+		}
+		if params.Lat != 0 || params.Lng != 0 {
+			hotel.DistanceKm = haversine(params.Lat, params.Lng, hotel.Meta.Lat, hotel.Meta.Lng)
+			if params.RadiusKm > 0 && hotel.DistanceKm > params.RadiusKm {
+				continue
+			}
+		}
+		if len(queryTokens) > 0 {
+			literal := hotelMatchesQueryTokens(hotel, queryTokens)
+			if !literal {
+				tagOverlap := tagOverlap(hotel.Meta.TagSlugs, inferredTags)
+				moodOverlap := 0
+				if moodSlug != "" {
+					moodOverlap = MoodScore(hotel.Meta.TagSlugs, mood)
+				}
+				if !hasIntent || (tagOverlap == 0 && moodOverlap == 0 && (destinationSlug == "" || hotel.DestinationSlug != destinationSlug)) {
+					continue
+				}
+			}
+		}
+		base = append(base, hotel)
+	}
+
+	facets := buildFacets(base)
+	filtered := make([]HotelCard, 0, len(base))
+	for _, hotel := range base {
+		if len(explicitTags) > 0 && !containsAllTags(hotel.Meta.TagSlugs, explicitTags) {
+			continue
+		}
+		if moodSlug != "" {
+			score := MoodScore(hotel.Meta.TagSlugs, mood)
+			if score == 0 {
+				continue
+			}
+			hotel.Match = score
+		}
+		if len(inferredTags) > 0 {
+			tagScore := overlapPercent(hotel.Meta.TagSlugs, inferredTags)
+			if tagScore > hotel.Match {
+				hotel.Match = tagScore
+			}
+		}
+		if lr := logisticRecommendation(hotel, params, moodSlug, inferredTags); lr > hotel.Match {
+			hotel.Match = lr
+		}
+		if hotel.Match == 0 && len(queryTokens) > 0 && hotelMatchesQueryTokens(hotel, queryTokens) {
+			hotel.Match = 92
+		}
+		filtered = append(filtered, hotel)
+	}
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		left, right := filtered[i], filtered[j]
+		sortMode := params.Sort
+		if sortMode == "" && (moodSlug != "" || len(inferredTags) > 0 || len(queryTokens) > 0) {
+			sortMode = "match"
+		}
+		switch sortMode {
+		case "price_asc":
+			return left.PriceFrom < right.PriceFrom
+		case "price_desc":
+			return left.PriceFrom > right.PriceFrom
+		case "rating":
+			return left.Rating > right.Rating
+		case "distance":
+			return left.DistanceKm < right.DistanceKm
+		case "match":
+			if left.Match != right.Match {
+				return left.Match > right.Match
+			}
+			if left.Rating != right.Rating {
+				return left.Rating > right.Rating
+			}
+		}
+		if left.Featured != right.Featured {
+			return left.Featured
+		}
+		return left.Rating > right.Rating
+	})
+
+	total := len(filtered)
+	if len(filtered) > 60 {
+		filtered = filtered[:60]
+	}
+	return SearchResult{
+		Hotels: filtered,
+		Total:  total,
+		Query:  params.Query,
+		Facets: facets,
+		Mood:   moodSlug,
+		Tags:   explicitTags,
+		Nearby: params.Lat != 0 || params.Lng != 0,
+	}, nil
+}
+
+func hotelMatchesQuery(hotel HotelCard, query string) bool {
+	return hotelMatchesQueryTokens(hotel, searchTokens(query))
+}
+
+var searchStopWords = map[string]bool{
+	"отель": true, "отели": true, "гостиница": true, "гостиницы": true, "номер": true,
+	"для": true, "у": true, "с": true, "и": true, "в": true, "на": true, "рядом": true,
+	"хочу": true, "хочется": true, "мне": true, "нужен": true, "нужна": true,
+	"поехать": true, "поездка": true, "поездку": true, "отдых": true, "отдыхать": true,
+	"где": true, "что": true, "как": true, "the": true, "a": true, "to": true,
+	"in": true, "with": true, "near": true, "hotel": true, "гостиницу": true,
+	"подбери": true, "подобрать": true, "найди": true, "найти": true,
+}
+
+func searchTokens(query string) []string {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	if lower == "" {
+		return nil
+	}
+	fields := strings.FieldsFunc(lower, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= 'а' && r <= 'я') && r != 'ё' && !(r >= '0' && r <= '9') && r != '-'
+	})
+	tokens := make([]string, 0, len(fields))
+	for _, token := range fields {
+		if len([]rune(token)) < 2 || searchStopWords[token] {
+			continue
+		}
+		tokens = append(tokens, token)
+	}
+	return tokens
+}
+
+func hotelMatchesQueryTokens(hotel HotelCard, tokens []string) bool {
+	if len(tokens) == 0 {
+		return true
+	}
+	haystack := strings.ToLower(strings.Join([]string{
+		hotel.Name,
+		hotel.City,
+		hotel.Country,
+		hotel.Address,
+		hotel.ShortDescription,
+		strings.Join(hotel.Tags, " "),
+		strings.Join(hotel.TagSlugs, " "),
+		strings.Join(hotel.Amenities, " "),
+		hotel.Meta.Highlight,
+	}, " "))
+	for _, token := range tokens {
+		if !strings.Contains(haystack, token) {
+			return false
+		}
+	}
+	return true
+}
+
+func tagOverlap(haystack, needles []string) int {
+	have := make(map[string]bool, len(haystack))
+	for _, value := range haystack {
+		have[value] = true
+	}
+	matched := 0
+	for _, needle := range needles {
+		if have[needle] {
+			matched++
+		}
+	}
+	return matched
+}
+
+func containsAllTags(haystack, needles []string) bool {
+	have := make(map[string]bool, len(haystack))
+	for _, value := range haystack {
+		have[value] = true
+	}
+	for _, needle := range needles {
+		if !have[needle] {
+			return false
+		}
+	}
+	return true
+}
+
+func overlapPercent(haystack, needles []string) int {
+	if len(needles) == 0 {
+		return 0
+	}
+	have := make(map[string]bool, len(haystack))
+	for _, value := range haystack {
+		have[value] = true
+	}
+	matched := 0
+	for _, needle := range needles {
+		if have[needle] {
+			matched++
+		}
+	}
+	if matched == 0 {
+		return 0
+	}
+	return 55 + int(float64(matched)/float64(len(needles))*43)
+}
+
+func haversine(lat1, lng1, lat2, lng2 float64) float64 {
+	const earthRadius = 6371.0
+	if lat1 == 0 || lng1 == 0 || lat2 == 0 || lng2 == 0 {
+		return 0
+	}
+	toRad := math.Pi / 180
+	dLat := (lat2 - lat1) * toRad
+	dLng := (lng2 - lng1) * toRad
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*toRad)*math.Cos(lat2*toRad)*math.Sin(dLng/2)*math.Sin(dLng/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return math.Round(earthRadius*c*10) / 10
 }
 
 func scanHotelCards(rows *sql.Rows, favoriteIDs map[int64]bool) ([]HotelCard, error) {
 	hotels := make([]HotelCard, 0)
 	for rows.Next() {
 		var hotel HotelCard
-		var tagsJSON string
+		var tagsJSON, metaJSON, amenitiesJSON string
 		if err := rows.Scan(
 			&hotel.ID, &hotel.Slug, &hotel.Name, &hotel.City, &hotel.Country,
 			&hotel.DestinationSlug, &hotel.Image, &hotel.Address, &hotel.ShortDescription,
 			&hotel.Rating, &hotel.Reviews, &hotel.PriceFrom, &tagsJSON, &hotel.Featured,
+			&metaJSON, &amenitiesJSON, &hotel.Capacity,
 		); err != nil {
 			return nil, err
 		}
-		hotel.Tags = decodeStrings(tagsJSON)
+		hotel.Meta = decodeHotelMeta(metaJSON)
+		hotel.Amenities = decodeStrings(amenitiesJSON)
+		if len(hotel.Meta.TagSlugs) > 0 {
+			hotel.TagSlugs = hotel.Meta.TagSlugs
+			hotel.Tags = TagsToLabels(hotel.Meta.TagSlugs)
+		} else {
+			hotel.Tags = decodeStrings(tagsJSON)
+			hotel.TagSlugs = []string{}
+		}
 		hotel.Favorited = favoriteIDs != nil && favoriteIDs[hotel.ID]
+		hotel.PriceBreakdown = buildPriceBreakdown(hotel.PriceFrom, hotel.Capacity)
 		hotels = append(hotels, hotel)
 	}
 	return hotels, rows.Err()
@@ -482,13 +798,13 @@ func scanHotelCards(rows *sql.Rows, favoriteIDs map[int64]bool) ([]HotelCard, er
 
 func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, checkOut string, guests int) (HotelDetail, error) {
 	var detail HotelDetail
-	var tagsJSON, destinationTagsJSON, aliasesJSON, galleryJSON, amenitiesJSON string
+	var tagsJSON, destinationTagsJSON, aliasesJSON, galleryJSON, amenitiesJSON, metaJSON string
 	var destinationID int64
 
 	err := s.db.QueryRowContext(ctx,
 		`SELECT h.id, h.slug, h.name, d.city, d.country, d.slug, h.image, h.address,
 		        h.short_description, h.description, h.rating, h.reviews_count, h.price_per_night,
-		        h.vibe_tags_json, h.amenities_json, h.gallery_json, h.featured,
+		        h.vibe_tags_json, h.amenities_json, h.gallery_json, h.featured, h.meta_json,
 		        d.id, d.tagline, d.description, d.image, d.price_from, d.tags_json, d.aliases_json
 		 FROM hotels h JOIN destinations d ON d.id = h.destination_id
 		 WHERE h.slug = ?`,
@@ -497,7 +813,7 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 		&detail.ID, &detail.Slug, &detail.Name, &detail.City, &detail.Country, &detail.DestinationSlug,
 		&detail.Image, &detail.Address, &detail.ShortDescription, &detail.Description,
 		&detail.Rating, &detail.Reviews, &detail.PriceFrom, &tagsJSON, &amenitiesJSON, &galleryJSON,
-		&detail.Featured, &destinationID, &detail.Destination.Tagline, &detail.Destination.Description,
+		&detail.Featured, &metaJSON, &destinationID, &detail.Destination.Tagline, &detail.Destination.Description,
 		&detail.Destination.Image, &detail.Destination.PriceFrom, &destinationTagsJSON, &aliasesJSON,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -511,7 +827,14 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 	detail.Destination.City = detail.City
 	detail.Destination.Country = detail.Country
 	detail.Destination.Tags = decodeStrings(destinationTagsJSON)
-	detail.Tags = decodeStrings(tagsJSON)
+	detail.Meta = decodeHotelMeta(metaJSON)
+	detail.TagSlugs = detail.Meta.TagSlugs
+	if len(detail.TagSlugs) > 0 {
+		detail.Tags = TagsToLabels(detail.TagSlugs)
+	} else {
+		detail.Tags = decodeStrings(tagsJSON)
+		detail.TagSlugs = []string{}
+	}
 	detail.Amenities = decodeStrings(amenitiesJSON)
 	detail.Gallery = decodeStrings(galleryJSON)
 	detail.CheckIn = checkIn
@@ -531,6 +854,7 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 		}
 		detail.PriceFrom = minPrice
 	}
+	detail.PriceBreakdown = buildPriceBreakdown(detail.PriceFrom, guests)
 
 	if checkIn != "" && checkOut != "" {
 		booked, err := s.bookedRoomCounts(ctx, detail.ID, checkIn, checkOut)
@@ -546,9 +870,29 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 	}
 	detail.Rooms = rooms
 
-	detail.Nearby, err = s.poisForDestination(ctx, detail.DestinationSlug, "", 4)
+	allPOIs, err := s.poisForDestination(ctx, detail.DestinationSlug, "", 24)
 	if err != nil {
 		return HotelDetail{}, err
+	}
+	detail.Nearby = make([]POI, 0, len(allPOIs))
+	detail.Excursions = make([]POI, 0, 3)
+	for index := range allPOIs {
+		poi := allPOIs[index]
+		if poi.Minutes == 0 {
+			poi.Minutes = parseMinutes(poi.Distance)
+		}
+		if poi.Minutes > 0 && poi.Minutes < 45 && !strings.Contains(poi.Distance, "такси") {
+			poi.Minutes += int(detail.ID % 3)
+			poi.Distance = fmt.Sprintf("%d мин пешком", poi.Minutes)
+		}
+		if poi.Category == "excursion" {
+			detail.Excursions = append(detail.Excursions, poi)
+			continue
+		}
+		detail.Nearby = append(detail.Nearby, poi)
+	}
+	if len(detail.Nearby) > 9 {
+		detail.Nearby = detail.Nearby[:9]
 	}
 
 	favoriteIDs, _ := s.favoriteSet(ctx, userID)
@@ -578,6 +922,7 @@ func (s *Store) rooms(ctx context.Context, hotelID int64) ([]Room, error) {
 			return nil, err
 		}
 		room.Amenities = decodeStrings(amenitiesJSON)
+		room.PriceBreakdown = buildPriceBreakdown(room.Price, room.Capacity)
 		rooms = append(rooms, room)
 	}
 	return rooms, rows.Err()
@@ -609,7 +954,7 @@ func (s *Store) bookedRoomCounts(ctx context.Context, hotelID int64, checkIn, ch
 
 func (s *Store) poisForDestination(ctx context.Context, destinationSlug, category string, limit int) ([]POI, error) {
 	args := []any{destinationSlug}
-	query := `SELECT id, name, category, description, address, distance, tags_json, price_level
+	query := `SELECT id, name, category, description, address, distance, minutes, tags_json, price_level
 	          FROM pois WHERE destination_slug = ?`
 	if category != "" {
 		query += ` AND category = ?`
@@ -630,17 +975,183 @@ func (s *Store) poisForDestination(ctx context.Context, destinationSlug, categor
 		var tagsJSON string
 		if err := rows.Scan(
 			&poi.ID, &poi.Name, &poi.Category, &poi.Description,
-			&poi.Address, &poi.Distance, &tagsJSON, &poi.PriceLevel,
+			&poi.Address, &poi.Distance, &poi.Minutes, &tagsJSON, &poi.PriceLevel,
 		); err != nil {
 			return nil, err
 		}
 		poi.Tags = decodeStrings(tagsJSON)
+		poi.DestinationSlug = destinationSlug
 		pois = append(pois, poi)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return []POI{}, nil
 	}
 	return pois, rows.Err()
+}
+
+func (s *Store) POIDetail(ctx context.Context, userID, poiID int64) (POIDetail, error) {
+	var poi POI
+	var tagsJSON string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, destination_slug, name, category, description, address, distance, minutes, tags_json, price_level
+		 FROM pois WHERE id = ?`, poiID,
+	).Scan(
+		&poi.ID, &poi.DestinationSlug, &poi.Name, &poi.Category, &poi.Description,
+		&poi.Address, &poi.Distance, &poi.Minutes, &tagsJSON, &poi.PriceLevel,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return POIDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return POIDetail{}, err
+	}
+	poi.Tags = decodeStrings(tagsJSON)
+
+	favoriteIDs, _ := s.favoriteSet(ctx, userID)
+	hotels, err := s.allHotelCards(ctx, favoriteIDs)
+	if err != nil {
+		return POIDetail{}, err
+	}
+	nearby := make([]HotelCard, 0, len(hotels))
+	for _, hotel := range hotels {
+		if hotel.DestinationSlug != poi.DestinationSlug {
+			continue
+		}
+		nearby = append(nearby, hotel)
+	}
+	sort.SliceStable(nearby, func(i, j int) bool {
+		if nearby[i].Rating != nearby[j].Rating {
+			return nearby[i].Rating > nearby[j].Rating
+		}
+		return nearby[i].PriceFrom < nearby[j].PriceFrom
+	})
+	if len(nearby) > 6 {
+		nearby = nearby[:6]
+	}
+
+	city := ""
+	if len(nearby) > 0 {
+		city = nearby[0].City
+	}
+	return POIDetail{POI: poi, Hotels: nearby, City: city}, nil
+}
+
+func logisticRecommendation(hotel HotelCard, params SearchParams, moodSlug string, inferredTags []string) int {
+	boolFloat := func(value bool) float64 {
+		if value {
+			return 1
+		}
+		return 0
+	}
+	tagOverlap := 0
+	for _, tag := range inferredTags {
+		if containsString(hotel.Meta.TagSlugs, tag) {
+			tagOverlap++
+		}
+	}
+	features := []float64{
+		hotel.Rating / 10.0,
+		1 - float64(hotel.PriceFrom)/40000.0,
+		float64(tagOverlap) / 5.0,
+		boolFloat(moodSlug != "" && containsString(hotel.Meta.TagSlugs, moodSlug)),
+		boolFloat(hotel.Meta.Insured),
+		boolFloat(hotel.Meta.Guides),
+		boolFloat(hotel.Meta.Pool),
+		boolFloat(hotel.Meta.Parking),
+		boolFloat(hotel.Meta.Soundproof),
+	}
+	weights := []float64{2.4, 1.0, 2.8, 2.2, 0.9, 0.8, 1.0, 0.7, 0.8}
+	if params.Lat != 0 {
+		distance := hotel.DistanceKm
+		if distance <= 0 {
+			distance = 30
+		}
+		features = append(features, 1-math.Min(distance, 50)/50.0)
+		weights = append(weights, 1.3)
+	}
+	bias := -1.8
+	z := bias
+	for i := range features {
+		if i < len(weights) {
+			z += features[i] * weights[i]
+		}
+	}
+	probability := 1 / (1 + math.Exp(-z))
+	return int(probability*100 + 0.5)
+}
+
+func (s *Store) Weather(destination, date string) WeatherInfo {
+	seed := 0
+	for _, ch := range destination + date {
+		seed = seed*31 + int(ch)
+	}
+	if seed < 0 {
+		seed = -seed
+	}
+	month := 6
+	if parsed, err := time.Parse("2006-01-02", date); err == nil {
+		month = int(parsed.Month())
+	}
+	conditions := []string{"rain", "heat", "mild", "cold", "mild"}
+	// seasonal bias
+	if month >= 6 && month <= 8 {
+		conditions = []string{"heat", "mild", "heat", "mild", "rain"}
+	} else if month <= 2 || month == 12 {
+		conditions = []string{"cold", "mild", "cold", "snow", "mild"}
+	} else if month >= 9 && month <= 11 {
+		conditions = []string{"rain", "mild", "rain", "cold", "mild"}
+	}
+	condition := conditions[seed%len(conditions)]
+	temp := 18 + seed%12
+	switch condition {
+	case "heat":
+		temp = 26 + seed%8
+	case "rain":
+		temp = 12 + seed%8
+	case "cold", "snow":
+		temp = -4 + seed%8
+	}
+	descriptions := map[string]string{
+		"rain": "Возможен дождь — стоит выбрать отель с крытыми зонами",
+		"heat": "Жарко — пригодятся кондиционер и пляж рядом",
+		"cold": "Холодно — выбирайте отели с отоплением и сауной",
+		"snow": "Снег и мороз — зимние развлечения рядом",
+		"mild": "Комфортная погода для прогулок",
+	}
+	tags := map[string][]string{
+		"rain": {"Крытый бассейн", "Спа", "Кинотеатр рядом", "Кондиционер"},
+		"heat": {"Кондиционер", "Пляж в 2 минутах", "Открытый бассейн", "Терраса"},
+		"cold": {"Отопление", "Сауна", "Камин", "Зимние развлечения"},
+		"snow": {"Лыжи рядом", "Сауна", "Камин", "Горячие напитки"},
+		"mild": {"Прогулки", "Веранда", "Велопрокат", "Кафе на террасе"},
+	}
+	icons := map[string]string{
+		"rain": "🌧️", "heat": "☀️", "cold": "❄️", "snow": "🌨️", "mild": "🌤️",
+	}
+	return WeatherInfo{
+		Condition:   condition,
+		Description: descriptions[condition],
+		TempC:       temp,
+		Icon:        icons[condition],
+		Tags:        tags[condition],
+	}
+}
+
+func buildPriceBreakdown(price, guests int) PriceBreakdown {
+	if guests < 1 {
+		guests = 2
+	}
+	taxes := int(math.Round(float64(price) * 0.12))
+	fees := int(math.Round(float64(price) * 0.05))
+	breakfast := 900 * guests
+	total := price + taxes + fees + breakfast
+	return PriceBreakdown{
+		Room:      price,
+		Taxes:     taxes,
+		Fees:      fees,
+		Breakfast: breakfast,
+		Total:     total,
+	}
 }
 
 func (s *Store) Trips(ctx context.Context, userID int64) ([]Trip, error) {
@@ -831,7 +1342,8 @@ func (s *Store) Favorites(ctx context.Context, userID int64) ([]HotelCard, error
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT h.id, h.slug, h.name, d.city, d.country, d.slug, h.image, h.address,
 		        h.short_description, h.rating, h.reviews_count,
-		        COALESCE(MIN(r.price), h.price_per_night), h.vibe_tags_json, h.featured
+		        COALESCE(MIN(r.price), h.price_per_night), h.vibe_tags_json, h.featured,
+		        h.meta_json, h.amenities_json, COALESCE(MAX(r.capacity), 2)
 		 FROM hotels h
 		 JOIN destinations d ON d.id = h.destination_id
 		 JOIN favorites f ON f.hotel_id = h.id AND f.user_id = ?
@@ -921,19 +1433,37 @@ func (s *Store) DestinationBySlug(ctx context.Context, slug string) (Destination
 	return destination, err
 }
 
-func (s *Store) AssistantContext(ctx context.Context, destinationSlug, message string) (Destination, []POI, []AssistantHotel, error) {
+func (s *Store) AssistantContext(ctx context.Context, destinationSlug, hotelSlug, message string) (Destination, []POI, []AssistantHotel, error) {
 	var destination Destination
 	var err error
-	detected, detectErr := s.DetectDestination(ctx, message)
-	if detectErr == nil {
-		destination = detected
-	} else if strings.TrimSpace(destinationSlug) != "" {
-		destination, _ = s.DestinationBySlug(ctx, destinationSlug)
+
+	// A selected hotel is the strongest signal: build the whole context around it.
+	var focus *AssistantHotel
+	var focusPOIs []POI
+	if strings.TrimSpace(hotelSlug) != "" {
+		if detail, detailErr := s.HotelBySlug(ctx, 0, hotelSlug, "", "", 2); detailErr == nil {
+			destination = detail.Destination
+			assistantHotel := assistantHotelFromDetail(detail)
+			focus = &assistantHotel
+			focusPOIs = append(focusPOIs, detail.Nearby...)
+			focusPOIs = append(focusPOIs, detail.Excursions...)
+		}
+	}
+
+	if destination.Slug == "" {
+		detected, detectErr := s.DetectDestination(ctx, message)
+		if detectErr == nil {
+			destination = detected
+		} else if strings.TrimSpace(destinationSlug) != "" {
+			destination, _ = s.DestinationBySlug(ctx, destinationSlug)
+		}
 	}
 
 	category := categoryFromMessage(message)
 	pois := []POI{}
-	if destination.Slug != "" {
+	if focus != nil {
+		pois = prioritizePOIs(focusPOIs, category)
+	} else if destination.Slug != "" {
 		pois, err = s.poisForDestination(ctx, destination.Slug, category, 3)
 		if err != nil {
 			return Destination{}, nil, nil, err
@@ -943,11 +1473,119 @@ func (s *Store) AssistantContext(ctx context.Context, destinationSlug, message s
 		}
 	}
 
-	hotels, err := s.assistantHotels(ctx, destination.Slug, message)
-	if err != nil {
-		return Destination{}, nil, nil, err
+	hotels := []AssistantHotel{}
+	if focus != nil {
+		hotels = append(hotels, *focus)
+		// Add up to two alternatives from the same destination so the AI can
+		// gently suggest something else without flooding the answer.
+		if alternatives, altErr := s.assistantHotels(ctx, destination.Slug, ""); altErr == nil {
+			for _, alternative := range alternatives {
+				if alternative.Slug == focus.Slug {
+					continue
+				}
+				hotels = append(hotels, alternative)
+				if len(hotels) >= 3 {
+					break
+				}
+			}
+		}
+	} else {
+		hotels, err = s.assistantHotels(ctx, destination.Slug, message)
+		if err != nil {
+			return Destination{}, nil, nil, err
+		}
 	}
 	return destination, pois, hotels, nil
+}
+
+func assistantHotelFromDetail(detail HotelDetail) AssistantHotel {
+	tags := detail.Tags
+	if len(tags) == 0 && len(detail.Meta.TagSlugs) > 0 {
+		tags = TagsToLabels(detail.Meta.TagSlugs)
+	}
+	hotel := AssistantHotel{
+		Slug:             detail.Slug,
+		Name:             detail.Name,
+		City:             detail.City,
+		Image:            detail.Image,
+		PriceFrom:        detail.PriceFrom,
+		Rating:           detail.Rating,
+		Reviews:          detail.Reviews,
+		Tags:             tags,
+		Address:          detail.Address,
+		Amenities:        detail.Amenities,
+		ShortDescription: detail.ShortDescription,
+		Description:      detail.Description,
+		Highlight:        detail.Meta.Highlight,
+		Stars:            detail.Meta.Stars,
+		PriceTotal:       detail.PriceBreakdown.Total,
+	}
+	for index, room := range detail.Rooms {
+		if index >= 4 {
+			break
+		}
+		hotel.Rooms = append(hotel.Rooms, AssistantRoom{
+			Name:     room.Name,
+			Price:    room.Price,
+			Capacity: room.Capacity,
+			Bed:      room.Bed,
+			Size:     room.Size,
+		})
+	}
+	for index, poi := range detail.Nearby {
+		if index >= 6 {
+			break
+		}
+		hotel.Nearby = append(hotel.Nearby, fmt.Sprintf("%s (%s, %s)", poi.Name, poi.Category, poi.Distance))
+	}
+	if detail.Meta.FoodMinutes > 0 {
+		hotel.Distances = append(hotel.Distances, fmt.Sprintf("еда — %d мин пешком", detail.Meta.FoodMinutes))
+	}
+	if detail.Meta.ParkMinutes > 0 {
+		hotel.Distances = append(hotel.Distances, fmt.Sprintf("парк — %d мин пешком", detail.Meta.ParkMinutes))
+	}
+	if detail.Meta.MetroMinutes > 0 {
+		hotel.Distances = append(hotel.Distances, fmt.Sprintf("метро — %d мин пешком", detail.Meta.MetroMinutes))
+	}
+	if detail.Meta.BeachMinutes > 0 {
+		hotel.Distances = append(hotel.Distances, fmt.Sprintf("пляж — %d мин пешком", detail.Meta.BeachMinutes))
+	}
+	if detail.Meta.ServicesMinutes > 0 {
+		hotel.Distances = append(hotel.Distances, fmt.Sprintf("магазины и сервисы — %d мин пешком", detail.Meta.ServicesMinutes))
+	}
+	return hotel
+}
+
+func prioritizePOIs(pois []POI, category string) []POI {
+	limit := 4
+	if len(pois) <= limit {
+		return pois
+	}
+	if category == "" {
+		return pois[:limit]
+	}
+	result := make([]POI, 0, limit)
+	for _, poi := range pois {
+		if poi.Category == category && len(result) < limit {
+			result = append(result, poi)
+		}
+	}
+	for _, poi := range pois {
+		if len(result) >= limit {
+			break
+		}
+		duplicate := false
+		for _, existing := range result {
+			if existing.ID == poi.ID && existing.Name == poi.Name {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			result = append(result, poi)
+		}
+	}
+	return result
 }
 
 func (s *Store) assistantHotels(ctx context.Context, destinationSlug, message string) ([]AssistantHotel, error) {
@@ -960,16 +1598,29 @@ func (s *Store) assistantHotels(ctx context.Context, destinationSlug, message st
 	lower := strings.ToLower(message)
 	tagRules := []struct {
 		Stem string
-		Tag  string
+		Slug string
 	}{
-		{Stem: "тих", Tag: "тишина"},
-		{Stem: "мор", Tag: "море"},
-		{Stem: "дизайн", Tag: "дизайн"},
-		{Stem: "завтрак", Tag: "завтраки"},
-		{Stem: "гор", Tag: "горы"},
-		{Stem: "спа", Tag: "спа"},
-		{Stem: "семь", Tag: "семья"},
-		{Stem: "центр", Tag: "центр"},
+		{Stem: "тих", Slug: "tishina"},
+		{Stem: "мор", Slug: "more"},
+		{Stem: "дизайн", Slug: "dizayn"},
+		{Stem: "завтрак", Slug: "zavtraki"},
+		{Stem: "гор", Slug: "gory"},
+		{Stem: "спа", Slug: "spa"},
+		{Stem: "семь", Slug: "semya"},
+		{Stem: "зим", Slug: "zima"},
+		{Stem: "сиян", Slug: "polyarnoe-siyanie"},
+		{Stem: "закат", Slug: "zakaty"},
+		{Stem: "бассейн", Slug: "bassein"},
+		{Stem: "парков", Slug: "parkovka"},
+		{Stem: "гид", Slug: "guides"},
+		{Stem: "истори", Slug: "istoriya"},
+		{Stem: "ферм", Slug: "ferma"},
+		{Stem: "лес", Slug: "les"},
+		{Stem: "озер", Slug: "ozera"},
+		{Stem: "аквапарк", Slug: "akvapark"},
+		{Stem: "животн", Slug: "s-zhivotnymi"},
+		{Stem: "экскурс", Slug: "ekskursii"},
+		{Stem: "кофе", Slug: "kofe"},
 	}
 	matchedTags := make([]string, 0)
 	for _, rule := range tagRules {
@@ -978,22 +1629,25 @@ func (s *Store) assistantHotels(ctx context.Context, destinationSlug, message st
 		}
 		alreadyMatched := false
 		for _, tag := range matchedTags {
-			if tag == rule.Tag {
+			if tag == rule.Slug {
 				alreadyMatched = true
 				break
 			}
 		}
 		if !alreadyMatched {
-			matchedTags = append(matchedTags, rule.Tag)
+			matchedTags = append(matchedTags, rule.Slug)
 		}
 	}
+	if len(matchedTags) > 2 {
+		matchedTags = matchedTags[:2]
+	}
 	for _, tag := range matchedTags {
-		where += " AND h.vibe_tags_json LIKE ?"
-		args = append(args, "%"+tag+"%")
+		where += " AND h.meta_json LIKE ?"
+		args = append(args, "%\""+tag+"\"%")
 	}
 
 	query := `
-		SELECT COALESCE(MIN(r.price), h.price_per_night), h.slug, h.name, d.city, h.image, h.rating, h.vibe_tags_json
+		SELECT COALESCE(MIN(r.price), h.price_per_night), h.slug, h.name, d.city, h.image, h.rating, h.meta_json
 		FROM hotels h
 		JOIN destinations d ON d.id = h.destination_id
 		LEFT JOIN rooms r ON r.hotel_id = h.id
@@ -1010,11 +1664,11 @@ func (s *Store) assistantHotels(ctx context.Context, destinationSlug, message st
 	hotels := make([]AssistantHotel, 0)
 	for rows.Next() {
 		var hotel AssistantHotel
-		var tagsJSON string
-		if err := rows.Scan(&hotel.PriceFrom, &hotel.Slug, &hotel.Name, &hotel.City, &hotel.Image, &hotel.Rating, &tagsJSON); err != nil {
+		var metaJSON string
+		if err := rows.Scan(&hotel.PriceFrom, &hotel.Slug, &hotel.Name, &hotel.City, &hotel.Image, &hotel.Rating, &metaJSON); err != nil {
 			return nil, err
 		}
-		hotel.Tags = decodeStrings(tagsJSON)
+		hotel.Tags = TagsToLabels(decodeHotelMeta(metaJSON).TagSlugs)
 		hotels = append(hotels, hotel)
 	}
 	if err := rows.Err(); err != nil {
@@ -1051,6 +1705,24 @@ func containsAny(value string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+func parseMinutes(value string) int {
+	digits := strings.Builder{}
+	for _, character := range value {
+		if character >= '0' && character <= '9' {
+			digits.WriteRune(character)
+			continue
+		}
+		if digits.Len() > 0 {
+			break
+		}
+	}
+	if digits.Len() == 0 {
+		return 0
+	}
+	minutes, _ := strconv.Atoi(digits.String())
+	return minutes
 }
 
 func decodeStrings(value string) []string {

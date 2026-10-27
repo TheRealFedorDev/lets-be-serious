@@ -251,14 +251,14 @@ func (manager *AIManager) Chat(ctx context.Context, messages []ChatTurn) (string
 	if !manager.Ready() {
 		return "", errors.New("local model is not ready")
 	}
-	return manager.complete(ctx, messages, 220)
+	return manager.complete(ctx, messages, 360)
 }
 
 func (manager *AIManager) complete(ctx context.Context, messages []ChatTurn, maxTokens int) (string, error) {
 	payload := llamaRequest{
 		Model:       manager.config.Model,
 		Messages:    messages,
-		Temperature: 0.35,
+		Temperature: 0.55,
 		TopP:        0.9,
 		MaxTokens:   maxTokens,
 		Stream:      false,
@@ -308,7 +308,8 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	}
 	var input chatRequest
 	if err := decodeJSON(w, r, &input); err != nil {
-		writeError(w, http.StatusBadRequest, "Проверьте сообщение")
+		log.Printf("assistant chat decode: %v", err)
+		writeError(w, http.StatusBadRequest, "Не удалось прочитать сообщение. Обновите страницу и попробуйте снова.")
 		return
 	}
 	message := strings.TrimSpace(input.Message)
@@ -318,10 +319,18 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	destination, places, hotels, err := api.store.AssistantContext(ctx, input.DestinationSlug, message)
+	destinationSlug := strings.TrimSpace(string(input.DestinationSlug))
+	hotelSlug := strings.TrimSpace(string(input.HotelSlug))
+	destination, places, hotels, err := api.store.AssistantContext(ctx, destinationSlug, hotelSlug, message)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Не удалось подготовить ответ")
 		return
+	}
+
+	var focus *AssistantHotel
+	if hotelSlug != "" && len(hotels) > 0 && hotels[0].Slug == hotelSlug {
+		focused := hotels[0]
+		focus = &focused
 	}
 
 	if isAvailabilityQuestion(message) {
@@ -336,12 +345,12 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isGeneralQuestion(message) {
+	if focus == nil && isGeneralQuestion(message) {
 		reply := generalAssistantFallback()
 		source := "concierge"
 		if api.ai.Ready() {
 			generalMessages := []ChatTurn{
-				{Role: "system", Content: "Ты Odin AI — локальный консьерж сервиса бронирования отелей ODIN. Отвечай только по-русски, дружелюбно и кратко, 2–3 предложения. Расскажи, что помогаешь выбрать отель, найти локальные места и собрать маршрут. Не выдумывай факты и не обещай то, чего не можешь."},
+				{Role: "system", Content: "Odin AI — персональный travel-консьерж ODIN. Отвечай по-русски, тепло и конкретно, 3-5 предложений. Используй реальные данные отелей из контекста: название, город, рейтинг, цену, удобства, расстояния. Предлагай 2-4 варианта с коротким обоснованием. Если данных мало — честно скажи и предложи уточнить даты, бюджет или настроение. Не выдумывай отели и цены. В конце задай один уточняющий вопрос, чтобы продолжить диалог."},
 			}
 			for index, turn := range input.History {
 				if index >= len(input.History)-4 {
@@ -370,7 +379,7 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	systemPrompt := buildAssistantPrompt(destination, places, hotels)
+	systemPrompt := buildAssistantPrompt(destination, places, hotels, focus)
 	messages := []ChatTurn{{Role: "system", Content: systemPrompt}}
 	for index, turn := range input.History {
 		if index >= len(input.History)-6 {
@@ -388,11 +397,19 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 
 	reply := ""
 	source := "fallback"
-	if api.ai.Ready() && !wantsHotelStay(message) {
+	if api.ai.Ready() && (focus != nil || !wantsHotelStay(message)) {
 		modelCtx, cancel := context.WithTimeout(ctx, 55*time.Second)
 		generated, modelErr := api.ai.Chat(modelCtx, messages)
 		cancel()
-		if modelErr == nil && goodAssistantReply(generated, places, hotels, message) {
+		accepted := false
+		if modelErr == nil {
+			if focus != nil {
+				accepted = goodHotelReply(generated, focus, places)
+			} else {
+				accepted = goodAssistantReply(generated, places, hotels, message)
+			}
+		}
+		if accepted {
 			reply = generated
 			source = "llama"
 		} else if modelErr != nil {
@@ -402,7 +419,11 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if reply == "" {
-		reply = fallbackAssistantReply(destination, places, hotels, message)
+		if focus != nil {
+			reply = fallbackHotelReply(*focus, places, message)
+		} else {
+			reply = fallbackAssistantReply(destination, places, hotels, message)
+		}
 	}
 
 	response := AssistantResponse{
@@ -411,36 +432,276 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		Hotels:      toAssistantHotels(hotels),
 		Places:      places,
 		Destination: destination.City,
+		Focus:       focus,
 	}
 	writeJSON(w, http.StatusOK, response)
 }
 
-func buildAssistantPrompt(destination Destination, places []POI, hotels []AssistantHotel) string {
+func buildAssistantPrompt(destination Destination, places []POI, hotels []AssistantHotel, focus *AssistantHotel) string {
 	var contextBuilder strings.Builder
 	contextBuilder.WriteString("Ты Odin AI — локальный консьерж сервиса бронирования отелей ODIN. Отвечай только по-русски. ")
 	contextBuilder.WriteString("Ты помогаешь выбрать отель, спланировать поездку и найти локальные места. ")
 	contextBuilder.WriteString("Никогда не пиши, что «собираешь варианты» или «проверяешь доступность». Сразу давай конкретный ответ. ")
 	contextBuilder.WriteString("Используй только факты из блока ДАННЫЕ. Не придумывай названия, адреса и расстояния. ")
-	contextBuilder.WriteString("Называй только места и отели, которые перечислены в ДАННЫЕ. Если подходящего места нет в данных, так и скажи. ")
-	contextBuilder.WriteString("Пиши дружелюбно и уверенно, простым естественным русским языком, 2–4 коротких предложения. Если уместно, назови 2–3 конкретных места или отеля. ")
-	contextBuilder.WriteString("Если рекомендуешь отель, обязательно назови его цену за ночь и рейтинг из ДАННЫХ. ")
-	contextBuilder.WriteString("Если вопрос не о поездке, мягко верни разговор к путешествию.\n\n")
+	contextBuilder.WriteString("Пиши дружелюбно и уверенно, живым естественным русским языком. Не повторяй одни и те же формулировки из ответа в ответ. ")
+	if focus != nil {
+		contextBuilder.WriteString("Сейчас пользователь обсуждает конкретный отель. Отвечай именно про него, а не общим списком. ")
+		contextBuilder.WriteString("Если спрашивают про номера — назови конкретные категории и цены. Если про цену — назови полную стоимость с налогами, сборами и завтраком. ")
+		contextBuilder.WriteString("Если про расположение — используй расстояния и места рядом. Предлагай другой отель только если пользователь прямо просит альтернативу. ")
+		contextBuilder.WriteString("Ответ — 2-4 предложения, в конце один уместный уточняющий вопрос.\n\n")
+	} else {
+		contextBuilder.WriteString("Если уместно, назови 2-3 конкретных места или отеля. Если рекомендуешь отель, обязательно назови его цену за ночь и рейтинг из ДАННЫХ. ")
+		contextBuilder.WriteString("Если вопрос не о поездке, мягко верни разговор к путешествию.\n\n")
+	}
 	if destination.City != "" {
 		contextBuilder.WriteString("Город: " + destination.City + "\n")
 	}
+	if focus != nil {
+		writeFocusedHotel(&contextBuilder, *focus)
+	}
 	if len(places) > 0 {
-		contextBuilder.WriteString("Места:\n")
+		contextBuilder.WriteString("Места рядом:\n")
 		for _, place := range places {
 			contextBuilder.WriteString(fmt.Sprintf("- %s (%s), %s, %s. %s\n", place.Name, place.Category, place.Address, place.Distance, place.Description))
 		}
 	}
 	if len(hotels) > 0 {
-		contextBuilder.WriteString("Отели:\n")
+		label := "Отели:"
+		if focus != nil {
+			label = "Альтернативы в том же городе (предлагай только по запросу):"
+		}
+		contextBuilder.WriteString(label + "\n")
 		for _, hotel := range hotels {
-			contextBuilder.WriteString(fmt.Sprintf("- %s, %s, от %d ₽ за ночь, рейтинг %.1f, вайб: %s.\n", hotel.Name, hotel.City, hotel.PriceFrom, hotel.Rating, strings.Join(hotel.Tags, ", ")))
+			if focus != nil && hotel.Slug == focus.Slug {
+				continue
+			}
+			contextBuilder.WriteString(fmt.Sprintf("- %s, %s, от %d ₽ за ночь, рейтинг %.1f, теги: %s.\n", hotel.Name, hotel.City, hotel.PriceFrom, hotel.Rating, strings.Join(hotel.Tags, ", ")))
+			if hotel.Address != "" {
+				contextBuilder.WriteString(fmt.Sprintf("  Адрес: %s.\n", hotel.Address))
+			}
+			if hotel.ShortDescription != "" {
+				contextBuilder.WriteString(fmt.Sprintf("  Описание: %s.\n", hotel.ShortDescription))
+			}
+			if len(hotel.Amenities) > 0 {
+				contextBuilder.WriteString(fmt.Sprintf("  Удобства: %s.\n", strings.Join(hotel.Amenities, ", ")))
+			}
 		}
 	}
 	return contextBuilder.String()
+}
+
+func writeFocusedHotel(builder *strings.Builder, hotel AssistantHotel) {
+	builder.WriteString("Отель в фокусе:\n")
+	builder.WriteString(fmt.Sprintf("- %s, %s.\n", hotel.Name, hotel.City))
+	if hotel.Stars > 0 {
+		builder.WriteString(fmt.Sprintf("  Категория: %d звезды.\n", hotel.Stars))
+	}
+	builder.WriteString(fmt.Sprintf("  Рейтинг: %.1f из 10", hotel.Rating))
+	if hotel.Reviews > 0 {
+		builder.WriteString(fmt.Sprintf(" (%d отзывов)", hotel.Reviews))
+	}
+	builder.WriteString(".\n")
+	builder.WriteString(fmt.Sprintf("  Цена: от %d ₽ за ночь", hotel.PriceFrom))
+	if hotel.PriceTotal > 0 {
+		builder.WriteString(fmt.Sprintf(", полная стоимость за ночь с налогами, сборами и завтраком — %d ₽", hotel.PriceTotal))
+	}
+	builder.WriteString(".\n")
+	if hotel.Address != "" {
+		builder.WriteString("  Адрес: " + hotel.Address + ".\n")
+	}
+	if hotel.Highlight != "" {
+		builder.WriteString("  Главное: " + hotel.Highlight + ".\n")
+	}
+	if len(hotel.Tags) > 0 {
+		builder.WriteString("  Особенности: " + strings.Join(hotel.Tags, ", ") + ".\n")
+	}
+	if hotel.Description != "" {
+		builder.WriteString("  Описание: " + hotel.Description + "\n")
+	} else if hotel.ShortDescription != "" {
+		builder.WriteString("  Описание: " + hotel.ShortDescription + "\n")
+	}
+	if len(hotel.Amenities) > 0 {
+		builder.WriteString("  Удобства: " + strings.Join(hotel.Amenities, ", ") + ".\n")
+	}
+	if len(hotel.Rooms) > 0 {
+		parts := make([]string, 0, len(hotel.Rooms))
+		for _, room := range hotel.Rooms {
+			part := fmt.Sprintf("%s — %d ₽", room.Name, room.Price)
+			if room.Capacity > 0 {
+				part += fmt.Sprintf(", до %d гостей", room.Capacity)
+			}
+			if room.Bed != "" {
+				part += ", " + room.Bed
+			}
+			if room.Size > 0 {
+				part += fmt.Sprintf(", %d м²", room.Size)
+			}
+			parts = append(parts, part)
+		}
+		builder.WriteString("  Номера: " + strings.Join(parts, "; ") + ".\n")
+	}
+	if len(hotel.Distances) > 0 {
+		builder.WriteString("  Пешая доступность: " + strings.Join(hotel.Distances, "; ") + ".\n")
+	}
+	if len(hotel.Nearby) > 0 {
+		builder.WriteString("  Рядом: " + strings.Join(hotel.Nearby, "; ") + ".\n")
+	}
+}
+
+func goodHotelReply(reply string, focus *AssistantHotel, places []POI) bool {
+	normalized := strings.ToLower(strings.TrimSpace(reply))
+	if len([]rune(normalized)) < 45 {
+		return false
+	}
+	badPatterns := []string{"собираю вариант", "проверяю доступ", "не могу ответить", "как языковая модель", "я не имею доступа", "в данных отелях"}
+	for _, pattern := range badPatterns {
+		if strings.Contains(normalized, pattern) {
+			return false
+		}
+	}
+	name := strings.ToLower(focus.Name)
+	if strings.Contains(normalized, name) {
+		return true
+	}
+	if strings.Contains(normalized, "₽") || strings.Contains(normalized, "рейтинг") {
+		return true
+	}
+	for _, place := range places {
+		if place.Name != "" && strings.Contains(normalized, strings.ToLower(place.Name)) {
+			return true
+		}
+	}
+	return false
+}
+
+func fallbackHotelReply(hotel AssistantHotel, places []POI, message string) string {
+	lower := strings.ToLower(message)
+
+	if containsAny(lower, "номер", "комнат", "размещ", "люкс", "сьют", "suite", "studio") {
+		if len(hotel.Rooms) > 0 {
+			var builder strings.Builder
+			builder.WriteString(fmt.Sprintf("В %s %d %s на выбор. ", hotel.Name, len(hotel.Rooms), pluralWord(len(hotel.Rooms), "категория", "категории", "категорий")))
+			for index, room := range hotel.Rooms {
+				if index >= 3 {
+					break
+				}
+				if index > 0 {
+					builder.WriteString("; ")
+				}
+				builder.WriteString(fmt.Sprintf("«%s» — %d ₽ за ночь", room.Name, room.Price))
+				if room.Capacity > 0 {
+					builder.WriteString(fmt.Sprintf(", до %d гостей", room.Capacity))
+				}
+				if room.Size > 0 {
+					builder.WriteString(fmt.Sprintf(", %d м²", room.Size))
+				}
+			}
+			builder.WriteString(fmt.Sprintf(". С налогами, сборами и завтраком полная стоимость стартует от %d ₽. Какой формат ближе — компактный или с гостиной?", hotel.PriceTotal))
+			return builder.String()
+		}
+	}
+
+	if containsAny(lower, "цен", "стоит", "стоимость", "бюджет", "дорого", "дешев", "завтрак", "налог", "сбор") {
+		if hotel.PriceTotal > 0 {
+			return fmt.Sprintf("Номер в %s стартует от %d ₽ за ночь. С налогами, сервисным сбором и завтраком итог — %d ₽ за ночь, без сюрпризов на кассе. Если скажете, сколько гостей и на какие даты, подскажу точнее — или помогу выбрать номер.", hotel.Name, hotel.PriceFrom, hotel.PriceTotal)
+		}
+		return fmt.Sprintf("Номер в %s стартует от %d ₽ за ночь, итоговую стоимость с налогами и завтраком покажу в карточке отеля. На какие даты и сколько гостей планируете?", hotel.Name, hotel.PriceFrom)
+	}
+
+	if containsAny(lower, "рядом", "располож", "далеко", "метро", "пляж", "парк", "погул", "экскурс", "посмотреть", "куда сходить", "прогул") {
+		var builder strings.Builder
+		builder.WriteString(fmt.Sprintf("%s находится по адресу %s. ", hotel.Name, hotel.Address))
+		if len(hotel.Distances) > 0 {
+			builder.WriteString("Пешком: " + strings.Join(hotel.Distances, ", ") + ". ")
+		}
+		if len(hotel.Nearby) > 0 {
+			builder.WriteString("Рядом: " + strings.Join(hotel.Nearby, "; ") + ". ")
+		}
+		if len(places) > 0 {
+			names := make([]string, 0, len(places))
+			for _, place := range places {
+				names = append(names, place.Name)
+			}
+			builder.WriteString("Из проверенного советую " + strings.Join(names, ", ") + ". ")
+		}
+		builder.WriteString("Хотите, соберу маршрут на день вокруг отеля?")
+		return builder.String()
+	}
+
+	if containsAny(lower, "спа", "бассейн", "саун", "отдых", "расслаб", "аквапарк") {
+		features := make([]string, 0)
+		for _, amenity := range hotel.Amenities {
+			if containsAny(strings.ToLower(amenity), "спа", "бассейн", "саун", "хаммам", "джакузи") {
+				features = append(features, amenity)
+			}
+		}
+		if len(features) > 0 {
+			return fmt.Sprintf("Для восстановления в %s есть %s. После прогулки удобно вернуться и провести вечер без спешки. Хотите, подскажу, какие номера ближе к спа-зоне?", hotel.Name, strings.Join(features, ", "))
+		}
+		return fmt.Sprintf("В %s нет большого спа-комплекса, зато есть спокойная атмосфера и удобства для отдыха: %s. Могу предложить отель с бассейном и спа в этом же городе, если это важно.", hotel.Name, strings.Join(hotel.Amenities, ", "))
+	}
+
+	if containsAny(lower, "парков", "машин", "авто", "трансфер", "аэропорт") {
+		hasParking := false
+		for _, amenity := range hotel.Amenities {
+			if containsAny(strings.ToLower(amenity), "парков", "трансфер") {
+				hasParking = true
+				break
+			}
+		}
+		if hasParking {
+			return fmt.Sprintf("Да, у %s есть парковка и/или трансфер — это указано в удобствах отеля. Адрес для навигатора: %s. Уточните, нужна ли парковка на всё время проживания, и я подскажу детали.", hotel.Name, hotel.Address)
+		}
+		return fmt.Sprintf("В удобствах %s парковка не заявлена. Ближайшие варианты с парковкой могу предложить в этом же городе — скажите, на каком транспорте планируете приехать?", hotel.Name)
+	}
+
+	if containsAny(lower, "животн", "с собак", "с кошк", "питом") {
+		for _, tag := range hotel.Tags {
+			if strings.Contains(strings.ToLower(tag), "животн") {
+				return fmt.Sprintf("Да, %s принимает гостей с животными — это отмечено в особенностях отеля. Уточните, пожалуйста, вес питомца: помогу проверить условия размещения.", hotel.Name)
+			}
+		}
+		return fmt.Sprintf("В данных %s размещение с животными не отмечено. Могу подобрать отель в этом же городе, где питомцев принимают официально. Какой у вас питомец?", hotel.Name)
+	}
+
+	// Default: a warm, specific summary that changes depending on what the hotel offers.
+	intro := "Отличный выбор"
+	switch len([]rune(hotel.Name)) % 3 {
+	case 1:
+		intro = "Хороший вариант"
+	case 2:
+		intro = "С удовольствием расскажу"
+	}
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("%s: %s — %s, рейтинг %.1f", intro, hotel.Name, hotel.City, hotel.Rating))
+	if hotel.Reviews > 0 {
+		builder.WriteString(fmt.Sprintf(" по %d отзывам", hotel.Reviews))
+	}
+	builder.WriteString(". ")
+	if hotel.ShortDescription != "" {
+		builder.WriteString(hotel.ShortDescription + " ")
+	}
+	if len(hotel.Amenities) > 0 {
+		builder.WriteString("Есть " + strings.Join(hotel.Amenities, ", ") + ". ")
+	}
+	builder.WriteString(fmt.Sprintf("Номер стартует от %d ₽, с налогами и завтраком — %d ₽ за ночь. ", hotel.PriceFrom, hotel.PriceTotal))
+	if len(hotel.Nearby) > 0 {
+		builder.WriteString("Рядом: " + strings.Join(hotel.Nearby, "; ") + ". ")
+	}
+	builder.WriteString("Что для вас важнее — тишина, вид из номера или завтраки?")
+	return builder.String()
+}
+
+func pluralWord(count int, one, few, many string) string {
+	mod10 := count % 10
+	mod100 := count % 100
+	if mod10 == 1 && mod100 != 11 {
+		return one
+	}
+	if mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20) {
+		return few
+	}
+	return many
 }
 
 func goodAssistantReply(reply string, places []POI, hotels []AssistantHotel, message string) bool {
