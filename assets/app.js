@@ -2788,6 +2788,278 @@ function handleGlobalInput(event) {
   }, 180);
 }
 
+/* ---------- Trip planner (AI-режиссёр поездки) ---------- */
+
+const TRIP_UI = { lastPlan: null, busy: false };
+
+function ensureTripPlanner() {
+  if (document.getElementById("tripPlanner")) return document.getElementById("tripPlanner");
+  const overlay = document.createElement("div");
+  overlay.id = "tripPlanner";
+  overlay.className = "trip-overlay hidden";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Маршрут поездки");
+  overlay.innerHTML = `
+    <div class="trip-shell">
+      <header class="trip-head">
+        <div>
+          <span class="section-kicker">AI-режиссёр поездки</span>
+          <h2 id="tripTitle">Соберём маршрут за один шаг</h2>
+        </div>
+        <button type="button" class="icon-button" id="tripClose" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div class="trip-body" id="tripBody"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) closeTripPlanner(); });
+  overlay.querySelector("#tripClose").addEventListener("click", closeTripPlanner);
+  return overlay;
+}
+
+function openTripPlanner(prefill = {}) {
+  const overlay = ensureTripPlanner();
+  overlay.classList.remove("hidden");
+  document.body.classList.add("is-locked");
+  renderTripForm(prefill);
+}
+
+function closeTripPlanner() {
+  document.getElementById("tripPlanner")?.classList.add("hidden");
+  document.body.classList.remove("is-locked");
+}
+
+function tripFormMarkup() {
+  const search = state.search;
+  const destinations = state.destinations.length
+    ? state.destinations
+    : [{ slug: "sochi", city: "Сочи" }, { slug: "moscow", city: "Москва" }, { slug: "saint-petersburg", city: "Санкт-Петербург" }];
+  const selected = search.destination || destinations[0].slug;
+  return `
+    <form class="trip-form" id="tripForm" novalidate>
+      <div class="trip-form-grid">
+        <label class="trip-field">
+          <span>Куда</span>
+          <select name="destination">
+            ${destinations.map((destination) => `<option value="${escapeHTML(destination.slug)}" ${destination.slug === selected ? "selected" : ""}>${escapeHTML(destination.city)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="trip-field">
+          <span>Заезд</span>
+          <input type="date" name="from" value="${escapeHTML(search.checkIn)}" min="${todayISO()}">
+        </label>
+        <label class="trip-field">
+          <span>Выезд</span>
+          <input type="date" name="to" value="${escapeHTML(search.checkOut)}" min="${addDaysISO(todayISO(), 1)}">
+        </label>
+        <label class="trip-field">
+          <span>Гости</span>
+          <select name="guests">
+            ${[1, 2, 3, 4, 5, 6].map((value) => `<option value="${value}" ${value === search.guests ? "selected" : ""}>${value} ${plural(value, "гость", "гостя", "гостей")}</option>`).join("")}
+          </select>
+        </label>
+        <label class="trip-field">
+          <span>Бюджет, ₽</span>
+          <input type="number" name="budget" min="0" step="5000" value="80000" inputmode="numeric">
+        </label>
+        <label class="trip-field">
+          <span>Настроение</span>
+          <select name="mood">
+            <option value="">Любое</option>
+            ${state.moods.map((mood) => `<option value="${escapeHTML(mood.slug)}" ${mood.slug === search.mood ? "selected" : ""}>${escapeHTML(mood.title)}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <div class="trip-pace">
+        <span>Темп</span>
+        <button type="button" class="rating-pill is-active" data-trip-pace="calm">Спокойный</button>
+        <button type="button" class="rating-pill" data-trip-pace="active">Насыщенный</button>
+      </div>
+      <div class="trip-form-footer">
+        <span class="trip-hint">Отель, дни, бюджет и погода — в одном плане. Без доплат на месте.</span>
+        <button type="submit" class="primary-button" id="tripSubmit">
+          <span>Собрать маршрут</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+      <div class="trip-error hidden" id="tripError"></div>
+    </form>
+  `;
+}
+
+function renderTripForm(prefill = {}) {
+  const body = document.getElementById("tripBody");
+  const title = document.getElementById("tripTitle");
+  if (!body) return;
+  if (title) title.textContent = "Соберём маршрут за один шаг";
+  body.innerHTML = tripFormMarkup();
+  state.tripPace = prefill.pace || state.tripPace || "calm";
+  body.querySelectorAll("[data-trip-pace]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.tripPace === state.tripPace);
+    button.addEventListener("click", () => {
+      state.tripPace = button.dataset.tripPace;
+      body.querySelectorAll("[data-trip-pace]").forEach((item) => item.classList.toggle("is-active", item === button));
+    });
+  });
+  body.querySelector("#tripForm").addEventListener("submit", submitTripPlan);
+}
+
+async function submitTripPlan(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("#tripSubmit");
+  const errorBox = form.querySelector("#tripError");
+  if (TRIP_UI.busy) return;
+  const data = new FormData(form);
+  const payload = {
+    destination: String(data.get("destination") || ""),
+    from: String(data.get("from") || ""),
+    to: String(data.get("to") || ""),
+    guests: Number(data.get("guests") || 2),
+    budget: Number(data.get("budget") || 0),
+    mood: String(data.get("mood") || ""),
+    pace: state.tripPace || "calm",
+  };
+  if (!payload.from || !payload.to || payload.to <= payload.from) {
+    if (errorBox) { errorBox.textContent = "Выезд должен быть позже заезда."; errorBox.classList.remove("hidden"); }
+    return;
+  }
+  TRIP_UI.busy = true;
+  if (errorBox) errorBox.classList.add("hidden");
+  setButtonLoading(button, true, "Собираем маршрут…");
+  try {
+    const plan = await api("/api/trip/plan", { method: "POST", body: payload });
+    TRIP_UI.lastPlan = plan;
+    renderTripPlan(plan);
+  } catch (error) {
+    if (errorBox) { errorBox.textContent = error.message; errorBox.classList.remove("hidden"); }
+  } finally {
+    TRIP_UI.busy = false;
+    setButtonLoading(button, false);
+  }
+}
+
+function tripBudgetBars(split, total) {
+  const labels = { stay: "Отель", food: "Еда", activities: "Активности", transport: "Транспорт" };
+  return Object.keys(labels).map((key) => {
+    const value = Number(split[key] || 0);
+    const percent = total > 0 ? Math.round(value / total * 100) : 0;
+    return `
+      <div class="trip-budget-row">
+        <span>${labels[key]}</span>
+        <div class="trip-budget-bar"><i style="width:${percent}%"></i></div>
+        <strong>${money(value)}</strong>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderTripPlan(plan) {
+  const body = document.getElementById("tripBody");
+  const title = document.getElementById("tripTitle");
+  if (!body) return;
+  if (title) title.textContent = `${plan.city} · ${plan.nights} ${plural(plan.nights, "ночь", "ночи", "ночей")}`;
+  const hotel = plan.hotel || {};
+  const budget = plan.budget || { split: {} };
+  const days = plan.days || [];
+  const fits = budget.fits !== false;
+  const score = Number((plan.match && plan.match.score) || hotel.match || 0);
+  body.innerHTML = `
+    <div class="trip-result">
+      <div class="trip-result-top">
+        <div class="trip-match">
+          <span class="trip-match-score">${score}%</span>
+          <span><strong>${escapeHTML((plan.match && plan.match.verdict) || "Подходит")}</strong><small>${escapeHTML((plan.match && plan.match.reason) || "")}</small></span>
+        </div>
+        <button type="button" class="text-button small" id="tripRestart">Изменить параметры</button>
+      </div>
+
+      <article class="trip-hotel">
+        <img src="${escapeHTML(hotel.image || "")}" alt="${escapeHTML(hotel.name || "")}" loading="lazy">
+        <div class="trip-hotel-copy">
+          <span class="section-kicker">${escapeHTML(hotel.city || plan.city)} · ${escapeHTML(formatDateRange(plan.checkIn, plan.checkOut))}</span>
+          <h3>${escapeHTML(hotel.name || "")}</h3>
+          <p>${escapeHTML(hotel.shortDescription || "")}</p>
+          <div class="trip-hotel-meta">
+            <span>★ ${Number(hotel.rating || 0).toFixed(1)}</span>
+            <span>${money(hotel.priceFrom || 0)} за ночь</span>
+            <span>${plan.guests} ${plural(plan.guests, "гость", "гостя", "гостей")}</span>
+          </div>
+        </div>
+        <button type="button" class="primary-button" id="tripOpenHotel" data-hotel-slug="${escapeHTML(hotel.slug || "")}">Отель</button>
+      </article>
+
+      <section class="trip-budget">
+        <div class="trip-budget-total">
+          <div>
+            <span class="section-kicker">Честная стоимость поездки</span>
+            <strong>${money(budget.total || 0)}</strong>
+            <small>${money(budget.perPerson || 0)} на человека · ${money(budget.perDay || 0)} в день</small>
+          </div>
+          <span class="trip-fit ${fits ? "is-ok" : "is-over"}">${fits ? "В бюджет" : `+${money(budget.delta || 0)}`}</span>
+        </div>
+        <div class="trip-budget-bars">${tripBudgetBars(budget.split || {}, budget.total || 0)}</div>
+      </section>
+
+      <section class="trip-days">
+        ${days.map((day, index) => `
+          <article class="trip-day${index === 0 ? " is-open" : ""}" data-trip-day="${index}">
+            <button type="button" class="trip-day-head" data-trip-day-toggle="${index}">
+              <span class="trip-day-date">${escapeHTML(formatShortDate(day.date))}</span>
+              <span class="trip-day-title">${escapeHTML(day.title)}</span>
+              <span class="trip-day-weather">${escapeHTML((day.weather && day.weather.icon) || "")} ${Number((day.weather && day.weather.tempC) || 0)}°C</span>
+              <span class="trip-day-total">${money(day.total || 0)}</span>
+            </button>
+            <div class="trip-day-body">
+              ${(day.blocks || []).map((block) => `
+                <div class="trip-block">
+                  <span class="trip-block-time">${escapeHTML(block.time)}</span>
+                  <div class="trip-block-copy">
+                    <strong>${escapeHTML(block.title)}${block.place ? ` · ${escapeHTML(block.place)}` : ""}</strong>
+                    ${block.note ? `<small>${escapeHTML(block.note)}</small>` : ""}
+                  </div>
+                  <span class="trip-block-price">${block.price ? money(block.price) : "—"}</span>
+                </div>
+              `).join("")}
+            </div>
+          </article>
+        `).join("")}
+      </section>
+
+      ${(plan.tips || []).length ? `<ul class="trip-tips">${plan.tips.map((tip) => `<li>${escapeHTML(tip)}</li>`).join("")}</ul>` : ""}
+    </div>
+  `;
+  body.querySelector("#tripRestart")?.addEventListener("click", () => renderTripForm());
+  body.querySelector("#tripOpenHotel")?.addEventListener("click", (event) => {
+    const slug = event.currentTarget.dataset.hotelSlug;
+    if (!slug) return;
+    closeTripPlanner();
+    openHotel(slug);
+  });
+  body.querySelectorAll("[data-trip-day-toggle]").forEach((button) => {
+    button.addEventListener("click", () => button.closest(".trip-day")?.classList.toggle("is-open"));
+  });
+}
+
+function bindTripPlannerEntry() {
+  const panel = document.querySelector(".search-panel");
+  if (panel && !document.getElementById("tripPlanOpen")) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "tripPlanOpen";
+    button.className = "trip-cta";
+    button.innerHTML = `<span>✨</span> Собрать маршрут поездки`;
+    button.addEventListener("click", () => openTripPlanner());
+    panel.appendChild(button);
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !document.getElementById("tripPlanner")?.classList.contains("hidden")) closeTripPlanner();
+  });
+}
+
 /* ---------- Init ---------- */
 async function init() {
   if (state.initialized) return;
@@ -2797,6 +3069,7 @@ async function init() {
   bindEvents();
   await Promise.all([loadHome(), checkSession()]);
   updateAccount();
+  bindTripPlannerEntry();
   if (window.matchMedia("(max-width: 980px)").matches) {
     $$(".nav-link").forEach((link) => link.classList.remove("is-active"));
     setActiveNav("home");

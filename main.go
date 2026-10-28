@@ -245,6 +245,7 @@ func routes(api *API, cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/home", api.handleHome)
 	mux.HandleFunc("GET /api/destinations", api.handleDestinations)
 	mux.HandleFunc("GET /api/search", api.handleSearch)
+	mux.HandleFunc("POST /api/trip/plan", api.handleTripPlan)
 	mux.HandleFunc("GET /api/moods", api.handleMoods)
 	mux.HandleFunc("GET /api/weather", api.handleWeather)
 	mux.HandleFunc("GET /api/hotels/{slug}", api.handleHotel)
@@ -382,6 +383,31 @@ func (api *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (api *API) handleTripPlan(w http.ResponseWriter, r *http.Request) {
+	var req TripRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте параметры поездки")
+		return
+	}
+	key := tripCacheKey(req)
+	if cached, ok := tripFromCache(key); ok {
+		cached.Cached = true
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+	plan, err := api.store.BuildTrip(r.Context(), api.optionalUserID(r), req)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusNotFound, "Не нашли отели для этой поездки — попробуйте другое направление")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось собрать маршрут")
+		return
+	}
+	tripToCache(key, plan)
+	writeJSON(w, http.StatusOK, plan)
 }
 
 func queryBool(query url.Values, key string) bool {
