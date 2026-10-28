@@ -193,6 +193,7 @@
       "<div><strong>" + esc(m.verdict || "Подходит") + "</strong><span>" + esc(m.reason || "") + "</span></div></div>" +
       '<div class="tx-actions"><button type="button" class="tx-btn" id="txShare">' + ico('<path d="M12 15V3M8 7l4-4 4 4M5 12v7h14v-7"/>') + "Поделиться</button>" +
       '<span id="txSlotRestart"></span><span id="txSlotBook"></span></div></header>' +
+      (plan.notice ? '<div class="tx-notice" role="status">' + esc(plan.notice) + "</div>" : "") +
       hotelMarkup(plan) +
       whyMarkup(plan) +
       '<section class="tx-days" aria-label="План по дням">' + tabsMarkup(plan) +
@@ -393,6 +394,8 @@
     fetchDay(pace).then(function (day) {
       if (!S || S.plan.days[idx] === undefined) return;
       var old = S.plan.days[idx];
+      var sig = function (d) { return (d.blocks || []).map(function (b) { return b.time + "|" + b.title; }).join(";"); };
+      if (sig(old) === sig(day)) toast("Для этого дня другой темп не меняет план", "info");
       day.total = dayTotal(day);
       recomputeBudget(old, day);
       S.plan.days[idx] = day;

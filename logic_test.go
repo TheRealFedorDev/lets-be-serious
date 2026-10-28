@@ -109,3 +109,70 @@ func TestTripBudgetCountsStayAndExtras(t *testing.T) {
 		t.Fatal("expected trip to fit the budget")
 	}
 }
+
+func TestWhatIfBudgetLimitMatchesLabel(t *testing.T) {
+	if got := budgetLimit(0, 21400); got != 25680 {
+		t.Fatalf("no budget: expected 25680 (+20%% of 21400), got %d", got)
+	}
+	if got := budgetLimit(20000, 21400); got != 24000 {
+		t.Fatalf("budget 20000: expected 24000 (+20%%), got %d", got)
+	}
+}
+
+func TestWhatIfValidateRejectsOutOfRange(t *testing.T) {
+	ok := WhatIfRequest{Slug: "x", Guests: 2, Nights: 1, Budget: 0}
+	if err := validateWhatIf(ok); err != nil {
+		t.Fatalf("valid request rejected: %v", err)
+	}
+	bad := []WhatIfRequest{
+		{Slug: "x", Guests: 2, Nights: 1 << 62},
+		{Slug: "x", Guests: 2, Nights: 0},
+		{Slug: "x", Guests: 2, Nights: 31},
+		{Slug: "x", Guests: 0, Nights: 1},
+		{Slug: "x", Guests: 11, Nights: 1},
+		{Slug: "x", Guests: 2, Nights: 1, Budget: -1},
+		{Slug: "x", Guests: 2, Nights: 1, Budget: 10_000_001},
+	}
+	for _, req := range bad {
+		err := validateWhatIf(req)
+		if _, isInput := err.(*WhatIfInputError); !isInput || err.Error() == "" {
+			t.Fatalf("expected WhatIfInputError for %+v, got %v", req, err)
+		}
+	}
+}
+
+func TestTripPaceChangesArrivalAndDepartureDays(t *testing.T) {
+	destination := Destination{Slug: "sochi", City: "Сочи"}
+	hotel := HotelCard{Name: "Тест", PriceFrom: 10000, PriceBreakdown: PriceBreakdown{Total: 10000, Breakfast: 900}}
+	pois := []POI{
+		{ID: 1, Name: "Парк", Category: "nature", Minutes: 60},
+		{ID: 2, Name: "Кафе", Category: "food", Minutes: 60},
+		{ID: 3, Name: "Кафе 2", Category: "food", Minutes: 60},
+	}
+	sig := func(d TripDay) string {
+		out := ""
+		for _, b := range d.Blocks {
+			out += b.Time + b.Title + b.Place + ";"
+		}
+		return out
+	}
+	build := func(pace string) []TripDay {
+		return buildTripDays(destination, hotel, pois, TripRequest{From: "2026-11-01", Guests: 2, Pace: pace}, 3, &Store{})
+	}
+	calm, active := build("calm"), build("active")
+	for _, i := range []int{0, len(calm) - 1} {
+		if sig(calm[i]) == sig(active[i]) {
+			t.Fatalf("day %d identical for calm and active", i+1)
+		}
+	}
+	for _, d := range calm[1 : len(calm)] {
+		for _, b := range d.Blocks {
+			if b.Type == "food" && (b.Title == "Завтрак" || b.Title == "Завтрак и кофе") && b.Price != 0 {
+				t.Fatalf("included breakfast must cost 0, got %d", b.Price)
+			}
+		}
+	}
+	if got := clampInt(100, 1, 100); got != 100 {
+		t.Fatalf("score must allow 100, got %d", got)
+	}
+}

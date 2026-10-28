@@ -134,3 +134,5 @@
   .tx-root, .tx-panel.is-enter, .tx-bar i, .tx-rebuild:disabled svg { animation: none; }
   .tx-hotel, .tx-btn, .tx-tab, .tx-why-btn svg { transition: none; }
 }
+
+.tx-notice { margin: 12px 0 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #e0b252; background: #fff6df; color: #5c4210; font-size: 14px; line-height: 1.4; font-weight: 500; }
