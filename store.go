@@ -1041,6 +1041,10 @@ func (s *Store) poisForDestination(ctx context.Context, destinationSlug, categor
 		poi.Tags = decodeStrings(tagsJSON)
 		poi.DestinationSlug = destinationSlug
 		poi.Schematic = schematic == 1
+		if poi.Lat == 0 && poi.Lng == 0 {
+			poi.Lat, poi.Lng = fallbackCityCoord(destinationSlug, poi.Name)
+			poi.Schematic = true
+		}
 		pois = append(pois, poi)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
