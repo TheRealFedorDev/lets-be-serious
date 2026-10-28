@@ -841,7 +841,8 @@ func scanHotelCards(rows *sql.Rows, favoriteIDs map[int64]bool) ([]HotelCard, er
 		}
 		hotel.Favorited = favoriteIDs != nil && favoriteIDs[hotel.ID]
 		deriveAmenities(&hotel)
-		hotel.PriceBreakdown = buildPriceBreakdown(hotel.PriceFrom, hotel.Capacity)
+		// Число гостей запроса неизвестно -> 2 (по умолчанию), но не вместимость.
+		hotel.PriceBreakdown = buildPriceBreakdown(hotel.PriceFrom, 2)
 		hotels = append(hotels, hotel)
 	}
 	return hotels, rows.Err()
@@ -896,7 +897,7 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 	detail.CheckOut = checkOut
 	detail.Guests = guests
 
-	rooms, err := s.rooms(ctx, detail.ID)
+	rooms, err := s.rooms(ctx, detail.ID, guests)
 	if err != nil {
 		return HotelDetail{}, err
 	}
@@ -957,7 +958,7 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 	return detail, nil
 }
 
-func (s *Store) rooms(ctx context.Context, hotelID int64) ([]Room, error) {
+func (s *Store) rooms(ctx context.Context, hotelID int64, guests int) ([]Room, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, name, description, price, capacity, bed, size, amenities_json, image, total_units
 		 FROM rooms WHERE hotel_id = ? ORDER BY price`,
@@ -979,7 +980,7 @@ func (s *Store) rooms(ctx context.Context, hotelID int64) ([]Room, error) {
 			return nil, err
 		}
 		room.Amenities = decodeStrings(amenitiesJSON)
-		room.PriceBreakdown = buildPriceBreakdown(room.Price, room.Capacity)
+		room.PriceBreakdown = buildPriceBreakdown(room.Price, guests)
 		rooms = append(rooms, room)
 	}
 	return rooms, rows.Err()
@@ -1160,6 +1161,11 @@ func (s *Store) Weather(destination, date string) WeatherInfo {
 	}
 }
 
+// buildPriceBreakdown - единая формула цены за ночь (источник истины для
+// карточек, поиска и CreateBooking).
+// Решение по завтраку: завтрак ВКЛЮЧЁН в цену проживания, если breakfast > 0
+// (900 руб. x число гостей запроса; если гостей неизвестно - 2, не вместимость).
+// Клиенты не должны добавлять завтрак отдельной строкой поверх Total.
 func buildPriceBreakdown(price, guests int) PriceBreakdown {
 	if guests < 1 {
 		guests = 2
@@ -1261,7 +1267,7 @@ func (s *Store) CreateBooking(ctx context.Context, userID int64, input BookingIn
 		return Trip{}, err
 	}
 	if input.Guests > capacity {
-		return Trip{}, ErrUnavailable
+		return Trip{}, &CapacityError{Capacity: capacity}
 	}
 
 	var booked int
@@ -1276,7 +1282,8 @@ func (s *Store) CreateBooking(ctx context.Context, userID int64, input BookingIn
 		return Trip{}, ErrUnavailable
 	}
 
-	total := price * nights
+	// Та же формула, что «Полная стоимость проживания» на карточке.
+	total := buildPriceBreakdown(price, input.Guests).Total * nights
 	code, err := bookingCode()
 	if err != nil {
 		return Trip{}, err
@@ -1781,4 +1788,11 @@ func parseID(value string) (int64, error) {
 		return 0, errors.New("invalid id")
 	}
 	return id, nil
+}
+
+// CapacityError - гостей больше вместимости номера (не «номер занят»).
+type CapacityError struct{ Capacity int }
+
+func (e *CapacityError) Error() string {
+	return fmt.Sprintf("Номер вмещает до %d гостей", e.Capacity)
 }

@@ -2156,7 +2156,11 @@ function openBooking() {
   $("#bookingCheckOut").value = state.booking.checkOut;
   $("#bookingCheckIn").min = todayISO();
   $("#bookingCheckOut").min = addDaysISO(state.booking.checkIn, 1);
-  $("#bookingGuests").value = String(Math.min(state.booking.guests || 2, 6));
+  const cap = Math.max(1, Math.min(Number(state.booking.room?.capacity) || 6, 8));
+  const guestsSelect = $("#bookingGuests");
+  guestsSelect.innerHTML = Array.from({ length: cap }, (_, i) => `<option value="${i + 1}">${i + 1} ${plural(i + 1, "гость", "гостя", "гостей")}</option>`).join("");
+  state.booking.guests = Math.min(Math.max(state.booking.guests || 2, 1), cap);
+  guestsSelect.value = String(state.booking.guests);
   $("#bookingName").value = state.user ? state.user.name : "";
   $("#bookingEmail").value = state.user ? state.user.email : "";
   ["#bookingError1", "#bookingError2", "#bookingError3"].forEach((selector) => $(selector)?.classList.add("hidden"));
@@ -2176,9 +2180,38 @@ function bookingNights() {
   return Math.max(1, nightsBetween(state.booking.checkIn, state.booking.checkOut));
 }
 
+// Та же формула, что buildPriceBreakdown в store.go (сервер - источник истины):
+// налоги 12%, сборы 5%, завтрак 900 x гостей включён в цену проживания.
+function bookingBreakdown() {
+  const { room, guests } = state.booking;
+  const g = guests >= 1 ? guests : 2;
+  const nights = bookingNights();
+  const taxes = Math.round(room.price * 0.12);
+  const fees = Math.round(room.price * 0.05);
+  const breakfast = 900 * g;
+  const perNight = room.price + taxes + fees + breakfast;
+  return {
+    nights, perNight,
+    room: room.price * nights, taxes: taxes * nights, fees: fees * nights,
+    breakfast: breakfast * nights, total: perNight * nights,
+  };
+}
+
 function bookingTotal() {
   if (!state.booking) return 0;
-  return state.booking.room.price * bookingNights();
+  return bookingBreakdown().total;
+}
+
+function bookingBreakdownHTML() {
+  const b = bookingBreakdown();
+  const row = (label, value) => `<div class="booking-breakdown-row"><span>${label}</span><span>${money(value)}</span></div>`;
+  return `<div class="booking-breakdown">${row(`Номер · ${b.nights} ${plural(b.nights, "ночь", "ночи", "ночей")}`, b.room)}${row("Налоги", b.taxes)}${row("Сборы", b.fees)}${row("Завтрак (включён)", b.breakfast)}</div>`;
+}
+
+function bookingCapacityError() {
+  const cap = state.booking?.room?.capacity;
+  if (cap && state.booking.guests > cap) return `Номер вмещает до ${cap} ${plural(cap, "гостя", "гостей", "гостей")}`;
+  return "";
 }
 
 function renderBookingSummary() {
@@ -2195,6 +2228,10 @@ function renderBookingSummary() {
     `;
   }
   const total = bookingTotal();
+  ["#bookingBreakdownStep1", "#bookingBreakdownStep3"].forEach((selector) => {
+    const box = $(selector);
+    if (box) box.innerHTML = bookingBreakdownHTML();
+  });
   $("#bookingTotalStep1").textContent = money(total);
   $("#bookingTotalStep3").textContent = money(total);
   $("#paymentHotel").textContent = hotelName;
@@ -2229,6 +2266,9 @@ function validateBookingStep(step) {
     state.booking.checkOut = checkOut;
     state.booking.guests = Number($("#bookingGuests").value || 2);
     renderBookingSummary();
+    const capError = bookingCapacityError();
+    if (capError) return showBookingError(1, capError), false;
+    $("#bookingError1")?.classList.add("hidden");
     return true;
   }
   if (step === 2) {
@@ -2255,7 +2295,9 @@ function validateBookingStep(step) {
 async function submitBooking(event) {
   event.preventDefault();
   if (!state.booking || state.bookingBusy) return;
-  if (!validateBookingStep(1) || !validateBookingStep(2) || !validateBookingStep(3)) return;
+  if (!validateBookingStep(1)) return setBookingStep(1);
+  if (!validateBookingStep(2)) return setBookingStep(2);
+  if (!validateBookingStep(3)) return;
   const button = $("#bookingSubmit");
   state.bookingBusy = true;
   setButtonLoading(button, true, "Оплачиваем…");
@@ -3282,7 +3324,7 @@ function renderTripPlan(plan) {
       hotelId: hotel.id || hotel.hotelId,
       hotelName: hotel.name,
       hotelImage: hotel.image,
-      room: hotel.rooms && hotel.rooms[0] ? hotel.rooms[0] : { id: hotel.id || 1, name: "Standard", price: (hotel.priceBreakdown && hotel.priceBreakdown.total) || hotel.priceFrom || 0, image: hotel.image, size: 0, capacity: 2 },
+      room: hotel.rooms && hotel.rooms[0] ? hotel.rooms[0] : { id: hotel.id || 1, name: "Standard", price: hotel.priceFrom || (hotel.priceBreakdown && hotel.priceBreakdown.room) || 0, image: hotel.image, size: 0, capacity: 2 },
       checkIn: plan.checkIn,
       checkOut: plan.checkOut,
       guests: 2,

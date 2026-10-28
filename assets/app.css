@@ -1790,3 +1790,5 @@ body:has(.filters.is-open) .assistant-fab { opacity: 0; pointer-events: none; tr
    of inner padding. Reset it inside the card so the title, status and rows share one left edge. */
 .trip-card .trip-body { padding: 18px; overflow: visible; }
 .trip-card .trip-head { padding: 0; border-bottom: 0; }
+.booking-breakdown { display: grid; gap: 6px; margin: 4px 0 2px; font-size: 13px; color: var(--muted); }
+.booking-breakdown-row { display: flex; justify-content: space-between; }
