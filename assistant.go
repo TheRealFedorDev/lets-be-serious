@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -150,7 +149,7 @@ func (manager *AIManager) startAsync() {
 	command.Dir = filepath.Dir(manager.config.Server)
 	command.Stdout = logFile
 	command.Stderr = logFile
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	hideWindow(command)
 	if err := command.Start(); err != nil {
 		manager.setState("fallback", err.Error())
 		log.Printf("AI start: %v", err)
