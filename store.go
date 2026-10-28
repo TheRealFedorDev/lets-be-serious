@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	_ "modernc.org/sqlite"
 )
@@ -1490,9 +1491,22 @@ func (s *Store) AssistantContext(ctx context.Context, destinationSlug, hotelSlug
 	}
 
 	category := categoryFromMessage(message)
+	sights := wantsSights(message)
 	pois := []POI{}
 	if focus != nil {
 		pois = prioritizePOIs(focusPOIs, category)
+	} else if destination.Slug != "" && sights {
+		// «Что посмотреть»: достопримечательности, а не кофейни и рестораны.
+		for _, sightCategory := range []string{"culture", "excursion", "walk"} {
+			found, poiErr := s.poisForDestination(ctx, destination.Slug, sightCategory, 3)
+			if poiErr != nil {
+				return Destination{}, nil, nil, poiErr
+			}
+			pois = append(pois, found...)
+		}
+		if len(pois) > 3 {
+			pois = pois[:3]
+		}
 	} else if destination.Slug != "" {
 		pois, err = s.poisForDestination(ctx, destination.Slug, category, 3)
 		if err != nil {
@@ -1526,6 +1540,54 @@ func (s *Store) AssistantContext(ctx context.Context, destinationSlug, hotelSlug
 		}
 	}
 	return destination, pois, hotels, nil
+}
+
+// wantsSights: вопрос про достопримечательности («что посмотреть», «куда сходить»).
+func wantsSights(message string) bool {
+	return containsAny(strings.ToLower(message),
+		"посмотреть", "достопримечат", "что интересного", "куда сходить", "куда пойти", "осмотреть", "sights")
+}
+
+// normalizeHotelName: нижний регистр, ё→е, без знаков препинания и союза and
+// («Cedar & Sea» == «cedar and sea» == «cedar sea»).
+func normalizeHotelName(value string) string {
+	value = strings.ToLower(strings.ReplaceAll(value, "ё", "е"))
+	value = strings.ReplaceAll(value, "&", " ")
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	kept := fields[:0]
+	for _, field := range fields {
+		if field != "and" {
+			kept = append(kept, field)
+		}
+	}
+	return strings.Join(kept, " ")
+}
+
+// FindHotelSlugByName ищет в сообщении название отеля из каталога (самое длинное совпадение).
+func (s *Store) FindHotelSlugByName(ctx context.Context, message string) string {
+	haystack := " " + normalizeHotelName(message) + " "
+	rows, err := s.db.QueryContext(ctx, `SELECT slug, name FROM hotels`)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+	best, bestLen := "", 0
+	for rows.Next() {
+		var slug, name string
+		if rows.Scan(&slug, &name) != nil {
+			continue
+		}
+		needle := normalizeHotelName(name)
+		if needle == "" || len(needle) < bestLen {
+			continue
+		}
+		if strings.Contains(haystack, " "+needle+" ") || strings.Contains(haystack, " "+needle) && len([]rune(needle)) >= 6 {
+			best, bestLen = slug, len(needle)
+		}
+	}
+	return best
 }
 
 func assistantHotelFromDetail(detail HotelDetail) AssistantHotel {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -320,6 +321,18 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	destinationSlug := strings.TrimSpace(string(input.DestinationSlug))
 	hotelSlug := strings.TrimSpace(string(input.HotelSlug))
+	// Название отеля в вопросе («Сколько стоит Sunset Pier на 3 ночи?») важнее города.
+	if named := api.store.FindHotelSlugByName(ctx, message); named != "" {
+		hotelSlug = named
+	}
+	nights := nightsFromMessage(message)
+	if nights == 0 && input.Nights > 0 && input.Nights <= 60 {
+		nights = input.Nights
+	}
+	guests := guestsFromMessage(message)
+	if guests == 0 && input.Guests > 0 && input.Guests <= 12 {
+		guests = input.Guests
+	}
 	destination, places, hotels, err := api.store.AssistantContext(ctx, destinationSlug, hotelSlug, message)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Не удалось подготовить ответ")
@@ -421,10 +434,14 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if reply == "" {
 		if focus != nil {
-			reply = fallbackHotelReply(*focus, places, message)
+			reply = fallbackHotelReply(*focus, places, message, nights, guests)
 		} else {
-			reply = fallbackAssistantReply(destination, places, hotels, message)
+			reply = fallbackAssistantReply(destination, places, hotels, message, api.cityList(ctx))
 		}
+	}
+	if focus == nil && destination.Slug == "" && !wantsHotelStay(message) {
+		// Город не распознан: не показываем случайные отели из разных городов.
+		hotels = nil
 	}
 
 	response := AssistantResponse{
@@ -576,7 +593,7 @@ func goodHotelReply(reply string, focus *AssistantHotel, places []POI) bool {
 	return false
 }
 
-func fallbackHotelReply(hotel AssistantHotel, places []POI, message string) string {
+func fallbackHotelReply(hotel AssistantHotel, places []POI, message string, nights, guests int) string {
 	lower := strings.ToLower(message)
 
 	if containsAny(lower, "номер", "комнат", "размещ", "люкс", "сьют", "suite", "studio") {
@@ -604,10 +621,7 @@ func fallbackHotelReply(hotel AssistantHotel, places []POI, message string) stri
 	}
 
 	if containsAny(lower, "цен", "стоит", "стоимость", "бюджет", "дорого", "дешев", "завтрак", "налог", "сбор") {
-		if hotel.PriceTotal > 0 {
-			return fmt.Sprintf("Номер в %s стартует от %d ₽ за ночь. С налогами, сервисным сбором и завтраком итог — %d ₽ за ночь, без сюрпризов на кассе. Если скажете, сколько гостей и на какие даты, подскажу точнее — или помогу выбрать номер.", hotel.Name, hotel.PriceFrom, hotel.PriceTotal)
-		}
-		return fmt.Sprintf("Номер в %s стартует от %d ₽ за ночь, итоговую стоимость с налогами и завтраком покажу в карточке отеля. На какие даты и сколько гостей планируете?", hotel.Name, hotel.PriceFrom)
+		return hotelPriceReply(hotel, nights, guests)
 	}
 
 	if containsAny(lower, "рядом", "располож", "далеко", "метро", "пляж", "парк", "погул", "экскурс", "посмотреть", "куда сходить", "прогул") {
@@ -694,6 +708,87 @@ func fallbackHotelReply(hotel AssistantHotel, places []POI, message string) stri
 	return builder.String()
 }
 
+// hotelPriceReply считает цену по той же формуле, что карточка отеля (buildPriceBreakdown):
+// номер + налоги + сервисный сбор + завтрак, умноженные на число ночей.
+func hotelPriceReply(hotel AssistantHotel, nights, guests int) string {
+	if hotel.PriceFrom <= 0 {
+		return fmt.Sprintf("Цену %s покажу в карточке отеля. На какие даты и сколько гостей планируете?", hotel.Name)
+	}
+	if guests < 1 {
+		guests = 2
+	}
+	breakdown := buildPriceBreakdown(hotel.PriceFrom, guests)
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("%s (%s): номер от %s ₽ за ночь. С налогами (%s ₽), сервисным сбором (%s ₽) и завтраком на %d %s (%s ₽) выходит %s ₽ за ночь",
+		hotel.Name, hotel.City, formatRubles(breakdown.Room), formatRubles(breakdown.Taxes), formatRubles(breakdown.Fees),
+		guests, pluralWord(guests, "гостя", "гостя", "гостей"), formatRubles(breakdown.Breakfast), formatRubles(breakdown.Total)))
+	if nights > 0 {
+		builder.WriteString(fmt.Sprintf(", а за %d %s — %s ₽.", nights, pluralWord(nights, "ночь", "ночи", "ночей"), formatRubles(breakdown.Total*nights)))
+	} else {
+		builder.WriteString(".")
+	}
+	builder.WriteString(" Цена ориентировочная: точную на ваши даты покажет карточка отеля.")
+	return builder.String()
+}
+
+func formatRubles(value int) string {
+	digits := strconv.Itoa(value)
+	var out []rune
+	for index, r := range []rune(digits) {
+		if index > 0 && (len(digits)-index)%3 == 0 {
+			out = append(out, '\u00a0')
+		}
+		out = append(out, r)
+	}
+	return string(out)
+}
+
+var (
+	nightsPattern = regexp.MustCompile(`(\d{1,2})\s*(?:-\s*)?(?:ноч|сут|дн)`)
+	guestsPattern = regexp.MustCompile(`(\d{1,2})\s*(?:гост|человек|чел\b|взросл)`)
+	numberWords   = map[string]int{"одну": 1, "одни": 1, "две": 2, "двое": 2, "три": 3, "четыре": 4, "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "десять": 10}
+	wordNights    = regexp.MustCompile(`(одну|две|три|четыре|пять|шесть|семь|восемь|десять)\s+(?:ноч|суток)`)
+)
+
+// nightsFromMessage достаёт число ночей из вопроса («на 3 ночи», «на неделю»); 0 — не указано.
+func nightsFromMessage(message string) int {
+	lower := strings.ToLower(message)
+	if match := nightsPattern.FindStringSubmatch(lower); match != nil {
+		if value, err := strconv.Atoi(match[1]); err == nil && value >= 1 && value <= 60 {
+			return value
+		}
+	}
+	if match := wordNights.FindStringSubmatch(lower); match != nil {
+		return numberWords[match[1]]
+	}
+	switch {
+	case strings.Contains(lower, "на неделю"):
+		return 7
+	case strings.Contains(lower, "на выходные"):
+		return 2
+	case strings.Contains(lower, "на сутки"):
+		return 1
+	}
+	return 0
+}
+
+// guestsFromMessage достаёт число гостей из вопроса; 0 — не указано.
+func guestsFromMessage(message string) int {
+	lower := strings.ToLower(message)
+	if match := guestsPattern.FindStringSubmatch(lower); match != nil {
+		if value, err := strconv.Atoi(match[1]); err == nil && value >= 1 && value <= 12 {
+			return value
+		}
+	}
+	if containsAny(lower, "вдвоём", "вдвоем", "для двоих", "на двоих") {
+		return 2
+	}
+	if containsAny(lower, "один ", "одному", "для одного") && !strings.Contains(lower, "одну") {
+		return 1
+	}
+	return 0
+}
+
 func pluralWord(count int, one, few, many string) string {
 	mod10 := count % 10
 	mod100 := count % 100
@@ -752,17 +847,36 @@ func wantsHotelStay(message string) bool {
 	return containsAny(lower, "отель", "отел", "номер", "заброни", "где останов", "поездк", "жиль", "апартамент")
 }
 
-func fallbackAssistantReply(destination Destination, places []POI, hotels []AssistantHotel, message string) string {
+func fallbackAssistantReply(destination Destination, places []POI, hotels []AssistantHotel, message string, cities []string) string {
 	if isAvailabilityQuestion(message) {
 		return "Да, я на связи и отвечаю сразу. Могу подобрать отель под ваш вайб, найти тихую кофейню или собрать маршрут на день. С чего начнём?"
 	}
 
 	city := destination.City
-	if city == "" && len(hotels) > 0 {
-		city = hotels[0].City
-	}
 	if city == "" {
-		city = "выбранном городе"
+		// Город не распознан: не склеиваем отели разных городов под одной подписью.
+		var builder strings.Builder
+		if wantsHotelStay(message) && len(hotels) > 0 {
+			builder.WriteString("Город вы не указали, поэтому вот подходящие варианты из разных направлений:")
+			for index, hotel := range hotels {
+				if index >= 3 {
+					break
+				}
+				builder.WriteString(fmt.Sprintf("\n• %s (%s) — рейтинг %.1f, от %d ₽ за ночь.", hotel.Name, hotel.City, hotel.Rating, hotel.PriceFrom))
+			}
+			builder.WriteString("\nНазовите город — подберу точнее.")
+			if len(cities) > 0 {
+				builder.WriteString(" Доступные направления: " + strings.Join(cities, ", ") + ".")
+			}
+			return builder.String()
+		}
+		builder.WriteString("Не нашёл такого направления в каталоге ODIN.")
+		if len(cities) > 0 {
+			builder.WriteString(" Сейчас могу подобрать отели и места в этих городах: " + strings.Join(cities, ", ") + ". Куда поедем?")
+		} else {
+			builder.WriteString(" Назовите город, и я подберу отели и места.")
+		}
+		return builder.String()
 	}
 
 	if wantsHotelStay(message) && len(hotels) > 0 {
@@ -780,14 +894,17 @@ func fallbackAssistantReply(destination Destination, places []POI, hotels []Assi
 
 	if len(places) > 0 {
 		var builder strings.Builder
-		switch places[0].Category {
-		case "coffee":
-			builder.WriteString("Да, я на связи. " + capitalizeFirst(cityPhrase(city)) + " без толпы советую:")
-		case "food":
+		sights := wantsSights(message)
+		switch {
+		case sights:
+			builder.WriteString(capitalizeFirst(cityPhrase(city)) + " стоит посмотреть:")
+		case places[0].Category == "coffee":
+			builder.WriteString("Кофейни " + cityPhrase(city) + " без толпы:")
+		case places[0].Category == "food":
 			builder.WriteString(capitalizeFirst(cityPhrase(city)) + " стоит зайти:")
-		case "walk":
+		case places[0].Category == "walk":
 			builder.WriteString("Для прогулки " + cityPhrase(city) + " отличный вариант:")
-		case "spa":
+		case places[0].Category == "spa":
 			builder.WriteString("Для спокойного вечера " + cityPhrase(city) + " подойдёт:")
 		default:
 			builder.WriteString(capitalizeFirst(cityPhrase(city)) + " обратите внимание на:")
@@ -820,6 +937,19 @@ func fallbackAssistantReply(destination Destination, places []POI, hotels []Assi
 	return "Я на связи. Опишите поездку одним предложением — например, «тихий отель у моря для двоих» или «где пить кофе в Москве». Сразу предложу конкретные варианты."
 }
 
+// cityList возвращает названия направлений каталога для подсказки «куда поедем».
+func (api *API) cityList(ctx context.Context) []string {
+	destinations, err := api.store.Destinations(ctx)
+	if err != nil {
+		return nil
+	}
+	cities := make([]string, 0, len(destinations))
+	for _, destination := range destinations {
+		cities = append(cities, destination.City)
+	}
+	return cities
+}
+
 func isAvailabilityQuestion(message string) bool {
 	lower := strings.ToLower(message)
 	return strings.Contains(lower, "ты работаешь") ||
@@ -847,6 +977,7 @@ func generalAssistantFallback() string {
 	return "Я Odin AI — локальный консьерж ODIN. Помогу выбрать отель под ваш вайб, найти тихое место для кофе или ужина и собрать маршрут на день. Просто опишите поездку — например, «тихий отель у моря для двоих»."
 }
 
+// cityPhrase склоняет направление каталога («в Москве», «на Алтае»). Покрывает все города /api/destinations.
 func cityPhrase(city string) string {
 	switch city {
 	case "Москва":
@@ -861,6 +992,18 @@ func cityPhrase(city string) string {
 		return "в Калининграде"
 	case "Алтай":
 		return "на Алтае"
+	case "Екатеринбург":
+		return "в Екатеринбурге"
+	case "Нижний Новгород":
+		return "в Нижнем Новгороде"
+	case "Иркутск":
+		return "в Иркутске"
+	case "Владивосток":
+		return "во Владивостоке"
+	case "Мурманск":
+		return "в Мурманске"
+	case "Суздаль":
+		return "в Суздале"
 	case "выбранном городе":
 		return "в выбранном городе"
 	default:

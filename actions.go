@@ -15,9 +15,21 @@ type AssistantAction struct {
 	HotelSlug string   `json:"hotelSlug,omitempty"`
 	Tags      []string `json:"tags,omitempty"`
 	Primary   bool     `json:"primary,omitempty"`
+	// Destination - slug города из контекста ответа: действие не теряет «Куда».
+	Destination string `json:"destination,omitempty"`
 }
 
 func buildAssistantActions(destination Destination, focus *AssistantHotel, message string) []AssistantAction {
+	actions := buildAssistantActionsRaw(destination, focus, message)
+	for index := range actions {
+		if actions[index].Destination == "" && destination.Slug != "" {
+			actions[index].Destination = destination.Slug
+		}
+	}
+	return actions
+}
+
+func buildAssistantActionsRaw(destination Destination, focus *AssistantHotel, message string) []AssistantAction {
 	actions := make([]AssistantAction, 0, 4)
 	lower := strings.ToLower(message)
 
@@ -38,6 +50,12 @@ func buildAssistantActions(destination Destination, focus *AssistantHotel, messa
 				Prompt: "Покажи похожие отели в этом городе с ценой и рейтингом",
 			})
 		}
+		if strings.Contains(" "+normalizeHotelName(message)+" ", " "+normalizeHotelName(focus.Name)+" ") {
+			actions = append(actions, AssistantAction{
+				ID: "open-hotel", Label: "Открыть отель", Kind: "hotel", Icon: "pin",
+				HotelSlug: focus.Slug,
+			})
+		}
 		actions = append(actions, AssistantAction{
 			ID: "nearby", Label: "Что рядом с отелем", Kind: "prompt", Icon: "pin",
 			Prompt: "Что интересного рядом с отелем и сколько идти пешком?",
@@ -49,6 +67,18 @@ func buildAssistantActions(destination Destination, focus *AssistantHotel, messa
 			})
 		}
 		return actions[:min(4, len(actions))]
+	}
+
+	if destination.Slug == "" {
+		// Город не распознан: предлагаем выбрать направление, а не гадать.
+		for _, city := range []string{"Сочи", "Москва", "Казань", "Санкт-Петербург"} {
+			actions = append(actions, AssistantAction{
+				ID: "pick-" + city, Label: "Отели " + cityPhrase(city), Kind: "prompt", Icon: "pin",
+				Prompt: "Подбери отели " + cityPhrase(city),
+			})
+		}
+		actions[0].Primary = true
+		return actions
 	}
 
 	actions = append(actions, AssistantAction{

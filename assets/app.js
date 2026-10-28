@@ -2458,6 +2458,7 @@ function assistantActionsMarkup(actions) {
       data-action-kind="${escapeHTML(action.kind)}"
       data-action-prompt="${escapeHTML(action.prompt || "")}"
       data-action-hotel="${escapeHTML(action.hotelSlug || "")}"
+      data-action-destination="${escapeHTML(action.destination || "")}"
       data-action-tags="${escapeHTML((action.tags || []).join(","))}">
       ${icons[action.icon] || icons.route}<span>${escapeHTML(action.label)}</span>
     </button>
@@ -2469,9 +2470,17 @@ async function handleAssistantAction(button) {
   const prompt = button.dataset.actionPrompt;
   const hotelSlug = button.dataset.actionHotel;
   const tags = (button.dataset.actionTags || "").split(",").filter(Boolean);
+  // Город из контекста ответа ассистента важнее текущего состояния поиска.
+  const actionDestination = button.dataset.actionDestination || "";
+  const dest = actionDestination || state.search.destination || "";
+  const destName = (actionDestination && destinationName(actionDestination)) || state.search.destinationName || "";
   if (kind === "trip") {
     closeAssistant();
-    openTripPlanner({ hotelSlug });
+    if (actionDestination) {
+      state.search.destination = actionDestination;
+      state.search.destinationName = destName;
+    }
+    openTripPlanner({ hotelSlug, destination: actionDestination || undefined });
     return;
   }
   if (kind === "hotel" && hotelSlug) {
@@ -2479,15 +2488,17 @@ async function handleAssistantAction(button) {
     openHotel(hotelSlug);
     return;
   }
-  if (kind === "filter" && tags.length) {
+  if (kind === "filter") {
     closeAssistant();
-    const dest = state.search.destination;
-    if (state.view !== "search" || !dest) {
-      openSearchView({
-        destination: dest,
-        destinationName: state.search.destinationName,
-        tags,
-      });
+    if (!tags.length) {
+      // «Отели в Сочи»: просто открываем поиск по городу.
+      openSearchView({ destination: dest, destinationName: destName });
+      if (destName) showToast(`Отели: ${destName}`, "success");
+      return;
+    }
+    const sameCity = !actionDestination || actionDestination === state.search.destination;
+    if (state.view !== "search" || !dest || !sameCity) {
+      openSearchView({ destination: dest, destinationName: destName, tags });
       showToast(`Применили фильтр: ${tags.map(tagLabel).join(", ")}`, "success");
       return;
     }
@@ -2549,6 +2560,8 @@ async function sendAssistant(text) {
           message,
           destinationSlug: state.search.destination || "",
           hotelSlug: state.assistantHotelSlug || "",
+          nights: Math.max(1, nightsBetween(state.search.checkIn, state.search.checkOut) || 1),
+          guests: Number(state.search.guests) || 2,
           history,
         },
       });

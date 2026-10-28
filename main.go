@@ -102,6 +102,8 @@ type chatRequest struct {
 	DestinationSlug flexibleString `json:"destinationSlug"`
 	HotelSlug       flexibleString `json:"hotelSlug"`
 	History         []ChatTurn     `json:"history"`
+	Nights          int            `json:"nights"`
+	Guests          int            `json:"guests"`
 }
 
 type errorResponse struct {
