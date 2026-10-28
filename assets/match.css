@@ -54,6 +54,7 @@
 
 /* --- за / против --- */
 .match-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.match-lists.is-single { grid-template-columns: minmax(0, 1fr); }
 .match-list h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .match-list ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); }
 .match-list li { position: relative; padding-left: 18px; overflow-wrap: anywhere; }

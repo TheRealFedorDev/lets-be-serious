@@ -86,8 +86,16 @@
       '<p class="sp-pp">' + money(b.perDay) + " в день · " + money(b.perPerson) + " на человека</p></section>";
   }
 
+  // Прогулка с битыми данными (десятки км, сотни минут) не показывается — как в trip.js walkMarkup.
+  function usableWalk(walk) {
+    if (!walk) return null;
+    if (Number(walk.distanceMeters) > 15000 || Number(walk.totalMinutes) > 300) return null;
+    return walk;
+  }
+
   function renderDay(day, i) {
     var w = day.weather || {};
+    var walk = usableWalk(day.walk);
     var weather = w.icon || w.tempC != null
       ? '<div class="sp-weather" title="' + escapeHTML(w.description || "") + '"><span aria-hidden="true">' + escapeHTML(w.icon || "") +
         "</span><span>" + (w.tempC != null ? (w.tempC > 0 ? "+" : "") + escapeHTML(w.tempC) + "°" : "") + "</span></div>"
@@ -100,7 +108,7 @@
         (bl.note ? '<div class="sp-item-note">' + escapeHTML(bl.note) + "</div>" : "") +
         (bl.price > 0 ? '<div class="sp-item-price">' + money(bl.price) + "</div>" : "") + "</div></li>";
     }).join("");
-    var mapUrl = day.walk && /^https?:\/\//.test(day.walk.mapUrl || "") ? day.walk.mapUrl : "";
+    var mapUrl = walk && /^https?:\/\//.test(walk.mapUrl || "") ? walk.mapUrl : "";
     var foot = '<div class="sp-day-foot"><span>Итого за день: ' + money(day.total) + "</span>" +
       (mapUrl ? '<a class="sp-link sp-no-print" href="' + escapeHTML(mapUrl) + '" target="_blank" rel="noopener">Пешая карта →</a>' : "") + "</div>";
     var date = fmtDate(day.date, { weekday: "long", day: "numeric", month: "long" });

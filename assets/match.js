@@ -49,11 +49,15 @@
   }
 
   /* ---------- N3: renderMatch ---------- */
-  function topLists(m) {
-    const factors = Array.isArray(m.factors) ? m.factors : [];
+  // Пустой фактор: тегов в запросе не было, а бэкенд (match.go) всё равно его присылает.
+  const EMPTY_TAGS_RE = /\b0 из 0\b/;
+  const isEmptyFactor = (f) => f.points === 0 && EMPTY_TAGS_RE.test(f.note || "");
+
+  function topLists(m, factors) {
     const fmt = (f) => (f.note ? `${f.label} — ${f.note}` : f.label);
-    let pros = Array.isArray(m.pros) ? m.pros.filter(Boolean) : [];
-    let cons = Array.isArray(m.cons) ? m.cons.filter(Boolean) : [];
+    const keep = (s) => !EMPTY_TAGS_RE.test(s);
+    let pros = Array.isArray(m.pros) ? m.pros.filter(Boolean).filter(keep) : [];
+    let cons = Array.isArray(m.cons) ? m.cons.filter(Boolean).filter(keep) : [];
     if (!pros.length) pros = factors.filter((f) => f.tone === "plus").sort((a, b) => b.points - a.points).map(fmt);
     if (!cons.length) cons = factors.filter((f) => f.tone === "minus").map(fmt);
     return { pros: pros.slice(0, 3), cons: cons.slice(0, 2) };
@@ -64,12 +68,13 @@
     if (!container || !m || !Array.isArray(m.factors) || !m.factors.length) return null;
     const compact = !!opts.compact;
     const base = Number(m.score) || 0;
-    const factors = m.factors.map((f) => ({ ...f, points: Number(f.points) || 0 }));
+    // Фактор с points=0 не входит в стопку, поэтому его удаление сумму не меняет.
+    const factors = m.factors.map((f) => ({ ...f, points: Number(f.points) || 0 })).filter((f) => !isEmptyFactor(f));
     const sum = factors.reduce((s, f) => s + f.points, 0);
     const denom = base > 0 ? base : sum || 1; // ширина = points / score
     const share = (p) => Math.max(0, Math.min(100, (p / denom) * 100));
     const toneOf = (f) => (f.tone === "plus" || f.tone === "minus" ? f.tone : "neutral");
-    const { pros, cons } = topLists(m);
+    const { pros, cons } = topLists(m, factors);
     const contributing = factors.filter((f) => f.points > 0);
     const eq = contributing.map((f) => f.points).join(" + ");
 
@@ -109,7 +114,7 @@
               ${f.note ? `<small>${esc(f.note)}</small>` : ""}
             </li>`).join("")}
         </ul>`}
-        ${pros.length || cons.length ? `<div class="match-lists">
+        ${pros.length || cons.length ? `<div class="match-lists${pros.length && cons.length ? "" : " is-single"}">
           ${list("За", pros, "pro")}${list("Против", cons, "con")}
         </div>` : ""}
         ${compact ? "" : `<p class="match-note">Вклады факторов складываются в итоговый балл. Никакой магии — только ваши параметры и данные отеля.</p>`}

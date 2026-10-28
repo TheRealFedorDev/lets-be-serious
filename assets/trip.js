@@ -23,6 +23,7 @@
     ["transport", "Транспорт"]
   ];
 
+  var reqCtx = null; // параметры формы, захваченные на submit (пока форма в DOM)
   var S = null; // { plan, tab, pace, origBudget, busy }
   var abort = null; // AbortController для слушателей текущего рендера
 
@@ -78,6 +79,9 @@
     var plan = S.plan;
     var slug = (plan.hotel || {}).slug;
     var q = new URLSearchParams();
+    var ctx = searchCtx(plan);
+    if (ctx.mood) q.set("mood", ctx.mood);
+    ctx.tags.forEach(function (t) { q.append("tags", t); });
     if (plan.checkIn) q.set("checkIn", plan.checkIn);
     if (plan.checkOut) q.set("checkOut", plan.checkOut);
     if (plan.guests) q.set("guests", String(plan.guests));
@@ -95,6 +99,13 @@
       body.removeAttribute("aria-busy");
       S.whyState = "done";
     }).catch(fail);
+  }
+
+  function searchCtx(plan) {
+    var st = (O.state && O.state.search) || {};
+    var mood = (S && S.mood) || plan.mood || st.mood || "";
+    var tags = (S && S.tags && S.tags.length) ? S.tags : (Array.isArray(plan.tags) && plan.tags.length ? plan.tags : (st.tags || []));
+    return { mood: String(mood || ""), tags: tags.filter(Boolean).map(String) };
   }
 
   function tabsMarkup(plan) {
@@ -153,10 +164,12 @@
     var sp = b.split || {};
     var total = num(b.total) || 1;
     var fits = b.fits !== false;
+    var hasBudget = S && S.origBudget > 0;
+    var badge = !hasBudget ? "" : '<span class="tx-fit ' + (fits ? "is-ok" : "is-over") + '">' + (fits ? "В бюджет" : "+" + money(num(b.delta)) + " сверх бюджета") + "</span>";
     return '<section class="tx-budget" aria-label="Бюджет поездки"><div class="tx-budget-top"><div>' +
       '<span class="tx-kicker">Честная стоимость поездки</span><strong class="tx-total">' + money(num(b.total)) + "</strong>" +
       "<small>" + money(num(b.perPerson)) + " на человека · " + money(num(b.perDay)) + " в день</small></div>" +
-      '<span class="tx-fit ' + (fits ? "is-ok" : "is-over") + '">' + (fits ? "В бюджет" : "+" + money(num(b.delta)) + " сверх бюджета") + "</span></div>" +
+      badge + "</div>" +
       '<ul class="tx-split">' + SPLIT.map(function (r) {
         var v = num(sp[r[0]]);
         var pct = Math.round((v / total) * 100);
@@ -271,6 +284,9 @@
       to: p.checkOut,
       guests: p.guests,
       budget: S.origBudget,
+      // Только параметры исходного запроса маршрута: теги поиска с главной могут быть от другого города и дают 404.
+      mood: (S && S.mood) || p.mood || "",
+      tags: (S && S.tags && S.tags.length) ? S.tags : (Array.isArray(p.tags) ? p.tags : []),
       hotelSlug: (p.hotel || {}).slug,
       pace: pace
     };
@@ -353,6 +369,8 @@
     var plan = e && e.detail && e.detail.plan;
     var host = document.getElementById("tripBody");
     if (!plan || !host || !plan.days || !plan.days.length) return;
+    var ctx = (e.detail && e.detail.scenario) ? null : reqCtx;
+    reqCtx = null;
     var buttons = {
       restart: host.querySelector("#tripRestart"),
       book: host.querySelector("#tripBook")
@@ -367,10 +385,20 @@
       pace: copy.pace || "calm",
       dayPace: {},
       busy: false,
-      origBudget: Math.max(0, num(b.total) - num(b.delta))
+      origBudget: ctx ? Math.max(0, num(ctx.budget)) : (num(b.delta) !== 0 ? Math.max(0, num(b.total) - num(b.delta)) : 0),
+      mood: ctx ? ctx.mood : "",
+      tags: []
     };
     render(host, buttons);
   }
+
+  // Бюджет и настроение берём из формы в момент отправки, пока она ещё в DOM.
+  document.addEventListener("submit", function (e) {
+    var f = e.target;
+    if (!f || f.id !== "tripForm") return;
+    var g = function (n) { var el = f.elements[n]; return el ? el.value : ""; };
+    reqCtx = { budget: Number(g("budget")) || 0, mood: String(g("mood") || "") };
+  }, true);
 
   O.on("trip:ready", onReady);
 })();

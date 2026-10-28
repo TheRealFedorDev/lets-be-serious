@@ -114,9 +114,18 @@
   .tx-hotel-go { display: none; }
   .tx-hotel-copy { padding: 12px; }
   .tx-hotel-desc { display: none; }
-  .tx-actions { width: 100%; }
-  .tx-actions > .tx-btn, .tx-actions > span { flex: 1 1 auto; }
-  .tx-actions > span .tx-btn { width: 100%; }
+  .tx-root { gap: 12px; }
+  .tx-head { gap: 8px; }
+  .tx-match { flex-basis: 100%; gap: 10px; }
+  .tx-score { width: 40px; height: 40px; font-size: 15px; }
+  .tx-score small { font-size: 9px; }
+  .tx-match > div { flex: 1 1 auto; line-height: 1.25; }
+  .tx-match > div strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+  .tx-match > div span { display: none; }
+  .tx-actions { width: 100%; flex-wrap: nowrap; gap: 6px; }
+  .tx-actions > .tx-btn, .tx-actions > span { flex: 1 1 0; }
+  .tx-actions .tx-btn { width: 100%; min-height: 36px; padding: 0 8px; font-size: 13px; gap: 4px; white-space: nowrap; }
+  .tx-actions .tx-btn svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .tx-panel, .tx-budget { padding: 14px; }
   .tx-split { grid-template-columns: 1fr; }
   .tx-total { font-size: 26px; }
