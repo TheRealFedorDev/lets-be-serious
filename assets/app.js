@@ -3190,7 +3190,10 @@ function renderTripPlan(plan) {
           <span class="trip-match-score">${score}%</span>
           <span><strong>${escapeHTML((plan.match && plan.match.verdict) || "Подходит")}</strong><small>${escapeHTML((plan.match && plan.match.reason) || "")}</small></span>
         </div>
-        <button type="button" class="text-button small" id="tripRestart">Изменить параметры</button>
+        <div class="trip-result-actions">
+          <button type="button" class="text-button small" id="tripShare">Поделиться</button>
+          <button type="button" class="text-button small" id="tripRestart">Изменить параметры</button>
+        </div>
       </div>
 
       <article class="trip-hotel">
@@ -3249,6 +3252,7 @@ function renderTripPlan(plan) {
     </div>
   `;
   body.querySelector("#tripRestart")?.addEventListener("click", () => renderTripForm());
+  body.querySelector("#tripShare")?.addEventListener("click", () => shareTrip(plan));
   body.querySelector("#tripOpenHotel")?.addEventListener("click", (event) => {
     const slug = event.currentTarget.dataset.hotelSlug;
     if (!slug) return;
@@ -3258,6 +3262,98 @@ function renderTripPlan(plan) {
   body.querySelectorAll("[data-trip-day-toggle]").forEach((button) => {
     button.addEventListener("click", () => button.closest(".trip-day")?.classList.toggle("is-open"));
   });
+}
+
+/* ---------- Share trip + QR ---------- */
+
+function ensureShareOverlay() {
+  let overlay = document.getElementById("shareOverlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "shareOverlay";
+  overlay.className = "share-overlay hidden";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Поделиться маршрутом");
+  overlay.innerHTML = `
+    <div class="share-shell">
+      <header class="share-head">
+        <div>
+          <span class="section-kicker">Поделиться маршрутом</span>
+          <h2>Ссылка и QR для спутника</h2>
+        </div>
+        <button type="button" class="icon-button" id="shareClose" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div class="share-body" id="shareBody"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) closeShareOverlay(); });
+  overlay.querySelector("#shareClose").addEventListener("click", closeShareOverlay);
+  return overlay;
+}
+
+function closeShareOverlay() {
+  document.getElementById("shareOverlay")?.classList.add("hidden");
+  document.body.classList.remove("is-locked");
+}
+
+function renderShareOverlay(link) {
+  const body = document.getElementById("shareBody");
+  if (!body) return;
+  body.innerHTML = `
+    <p class="share-hint">Откройте ссылку на телефоне или отправьте спутнику — план доступен без входа.</p>
+    <div class="share-grid">
+      <div class="share-link-block">
+        <span class="share-label">Ссылка на маршрут</span>
+        <a class="share-link" href="${escapeHTML(link)}" target="_blank" rel="noopener">${escapeHTML(link)}</a>
+        <div class="share-buttons">
+          <button type="button" class="primary-button" id="shareCopy">Скопировать ссылку</button>
+          <a class="text-button small" href="${escapeHTML(link)}" target="_blank" rel="noopener">Открыть страницу</a>
+        </div>
+      </div>
+      <div class="share-qr" id="shareQr" aria-label="QR-код со ссылкой на маршрут"></div>
+    </div>
+  `;
+  const qrBox = body.querySelector("#shareQr");
+  if (qrBox && typeof qrcode === "function") {
+    try {
+      const qr = qrcode(0, "M");
+      qr.addData(link);
+      qr.make();
+      qrBox.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 4, scalable: true });
+    } catch (error) {
+      qrBox.textContent = "QR недоступен";
+    }
+  }
+  body.querySelector("#shareCopy")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(link);
+      button.textContent = "Скопировано";
+      showToast("Ссылка скопирована", "success");
+    } catch (error) {
+      showToast("Выделите ссылку и скопируйте вручную", "info");
+    }
+    window.setTimeout(() => { button.textContent = "Скопировать ссылку"; }, 2200);
+  });
+}
+
+async function shareTrip(plan) {
+  if (!plan) return;
+  const overlay = ensureShareOverlay();
+  overlay.classList.remove("hidden");
+  document.body.classList.add("is-locked");
+  const body = document.getElementById("shareBody");
+  if (body) body.innerHTML = '<div class="filters-loading">Готовим ссылку…</div>';
+  try {
+    const response = await api("/api/trips/share", { method: "POST", body: { plan } });
+    renderShareOverlay(response.url);
+  } catch (error) {
+    if (body) body.innerHTML = `<div class="trip-error">${escapeHTML(error.message)}</div>`;
+  }
 }
 
 function bindTripPlannerEntry() {
