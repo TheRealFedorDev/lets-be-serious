@@ -3498,8 +3498,15 @@ function renderWalkSvg(walk) {
   return `<svg viewBox="0 0 ${w} ${h}" class="walk-map" role="img" aria-label="Маршрут прогулки">${stops.length > 1 ? `<polyline points="${pts}" class="walk-line"/>` : ""}${circles}</svg>`;
 }
 
-function openNearbyMap(hotel) {
+async function openNearbyMap(hotel) {
   if (!hotel) return;
+  // If hotel doesn't have nearby data, fetch full details
+  if (!hotel.nearby && hotel.slug) {
+    try {
+      const detail = await api(`/api/hotels/${encodeURIComponent(hotel.slug)}`);
+      if (detail) hotel = { ...hotel, ...detail, nearby: detail.nearby };
+    } catch (e) { /* ignore */ }
+  }
   const existing = document.getElementById("nearbyMapModal");
   if (existing) existing.remove();
   const allNearby = (hotel.nearby || []).filter((p) => p.lat && p.lng);
