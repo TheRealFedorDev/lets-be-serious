@@ -246,6 +246,8 @@ func routes(api *API, cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/destinations", api.handleDestinations)
 	mux.HandleFunc("GET /api/search", api.handleSearch)
 	mux.HandleFunc("POST /api/trip/plan", api.handleTripPlan)
+	mux.HandleFunc("GET /api/demo/scenarios", api.handleDemoScenarios)
+	mux.HandleFunc("GET /api/demo/scenario/{id}", api.handleDemoScenario)
 	mux.HandleFunc("GET /api/moods", api.handleMoods)
 	mux.HandleFunc("GET /api/weather", api.handleWeather)
 	mux.HandleFunc("GET /api/hotels/{slug}", api.handleHotel)

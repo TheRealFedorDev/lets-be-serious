@@ -2880,6 +2880,12 @@ function tripFormMarkup() {
   const selected = search.destination || destinations[0].slug;
   return `
     <form class="trip-form" id="tripForm" novalidate>
+      <div class="trip-scenarios">
+        <span>Быстрый старт:</span>
+        <button type="button" class="rating-pill" data-demo-scenario="family">🧸 Семья</button>
+        <button type="button" class="rating-pill" data-demo-scenario="romance">🥂 Романтика</button>
+        <button type="button" class="rating-pill" data-demo-scenario="budget">🎒 Разумно</button>
+      </div>
       <div class="trip-form-grid">
         <label class="trip-field">
           <span>Куда</span>
@@ -2945,6 +2951,27 @@ function renderTripForm(prefill = {}) {
     });
   });
   body.querySelector("#tripForm").addEventListener("submit", submitTripPlan);
+  body.querySelectorAll("[data-demo-scenario]").forEach((button) => {
+    button.addEventListener("click", () => loadDemoScenario(button.dataset.demoScenario));
+  });
+}
+
+async function loadDemoScenario(id) {
+  const body = document.getElementById("tripBody");
+  if (!body) return;
+  body.innerHTML = '<div class="filters-loading">Собираем сценарий…</div>';
+  try {
+    const scenario = await api(`/api/demo/scenario/${encodeURIComponent(id)}`);
+    if (scenario.plan) {
+      TRIP_UI.lastPlan = scenario.plan;
+      renderTripPlan(scenario.plan);
+    } else {
+      renderTripForm();
+    }
+  } catch (error) {
+    renderTripForm();
+    showToast(error.message, "error");
+  }
 }
 
 async function submitTripPlan(event) {

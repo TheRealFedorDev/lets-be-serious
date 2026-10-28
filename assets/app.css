@@ -1458,3 +1458,5 @@ input[type="date"] { min-width: 0; }
   .match-factors { grid-template-columns: 1fr; }
   .match-passport-lists { grid-template-columns: 1fr; }
 }
+.trip-scenarios { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.trip-scenarios > span { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-right: 4px; }
