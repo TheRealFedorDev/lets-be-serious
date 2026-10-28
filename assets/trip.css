@@ -7,7 +7,7 @@
 .tx-match { display: flex; align-items: center; gap: 12px; flex: 1 1 260px; }
 .tx-match > div { display: flex; flex-direction: column; line-height: 1.35; }
 .tx-match > div span { color: var(--muted); font-size: 13px; }
-.tx-score { flex: 0 0 auto; white-space: nowrap; line-height: 1; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--lime); color: var(--ink); font-weight: 800; font-size: 20px; }
+.tx-score { flex: 0 0 auto; white-space: nowrap; line-height: 1; width: 56px; height: 56px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--lime); color: var(--ink); font-weight: 800; font-size: 20px; }
 .tx-score small { font-size: 11px; margin-left: 1px; }
 .tx-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .tx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font-weight: 700; font-size: 14px; transition: background .15s, transform .15s; }
@@ -68,10 +68,10 @@
 .tx-t-rest .tx-dot { border-color: #d6c6f0; color: #6b45b8; background: #f5f0fd; }
 .tx-card { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--canvas-warm); }
 .tx-card strong { font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
-.tx-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 12px; }
+.tx-card-top { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 10px; font-size: 12px; }
 .tx-time { font-weight: 800; font-size: 13px; }
 .tx-type { color: var(--muted); font-weight: 600; }
-.tx-price { margin-left: auto; font-weight: 800; font-size: 13px; }
+.tx-price { grid-column: 3; justify-self: end; white-space: nowrap; text-align: right; font-weight: 800; font-size: 13px; }
 .tx-price.is-free { color: var(--success); font-weight: 700; }
 .tx-place { font-size: 13px; color: var(--ink-soft); }
 .tx-note { font-size: 13px; color: var(--muted); }

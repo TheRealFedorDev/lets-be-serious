@@ -48,7 +48,7 @@
       '<span class="tx-kicker">' + esc(h.city || plan.city) + " · " + esc(O.formatDateRange(plan.checkIn, plan.checkOut)) + "</span>" +
       "<strong>" + esc(h.name || "") + "</strong>" +
       "<span class=\"tx-hotel-desc\">" + esc(h.shortDescription || "") + "</span>" +
-      '<span class="tx-hotel-meta"><span>★ ' + num(h.rating).toFixed(1) + "</span><span>" + money(num(h.priceFrom)) + " за ночь</span><span>" +
+      '<span class="tx-hotel-meta"><span>★ ' + num(h.rating).toFixed(1).replace(".", ",") + "</span><span>" + money(num(h.priceFrom)) + " за ночь</span><span>" +
       num(plan.guests) + " " + plural(num(plan.guests), "гость", "гостя", "гостей") + "</span></span>" +
       "</span>" +
       '<span class="tx-hotel-go" aria-hidden="true">' + ico('<path d="M9 6l6 6-6 6"/>') + "</span></button>";

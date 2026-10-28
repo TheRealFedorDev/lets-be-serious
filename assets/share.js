@@ -148,7 +148,7 @@
     var hotel = h.name ? '<section class="sp-card sp-hotel" aria-label="Отель">' + (safeImg(h.image) ? '<img src="' + escapeHTML(h.image) + '" alt="' + escapeHTML(h.name) + '" loading="lazy">' : "") +
       '<div class="sp-hotel-body"><div class="sp-label">Где живём</div><h3>' + escapeHTML(h.name) + "</h3>" +
       (h.shortDescription ? "<p>" + escapeHTML(h.shortDescription) + "</p>" : "") +
-      '<div class="sp-meta">' + (h.rating ? '<span class="sp-chip sp-chip--lime">★ ' + escapeHTML(h.rating) + "</span>" : "") +
+      '<div class="sp-meta">' + (h.rating ? '<span class="sp-chip sp-chip--lime">★ ' + escapeHTML(Number(h.rating).toFixed(1).replace(".", ",")) + "</span>" : "") +
       (h.city ? '<span class="sp-chip">' + escapeHTML(h.city) + "</span>" : "") +
       (h.priceFrom ? '<span class="sp-chip">от ' + money(h.priceFrom) + " / ночь</span>" : "") + "</div></div></section>" : "";
 
