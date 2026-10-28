@@ -1581,3 +1581,93 @@ input[type="date"] { min-width: 0; }
 .transport-card strong { font-size: 13px; }
 .transport-card span { color: #1F4BDB; font-weight: 600; }
 .transport-card small { color: #888; }
+/* N7: states & mobile */
+
+/* 1. Search skeletons: photo + 3 lines painted on the existing .skeleton-card (markup unchanged).
+   motion.css owns ::after (shimmer), so the photo block uses ::before. */
+.result-card.skeleton-card {
+  background-color: var(--line);
+  background-image:
+    linear-gradient(var(--line-strong), var(--line-strong)),
+    linear-gradient(var(--line-strong), var(--line-strong)),
+    linear-gradient(var(--line-strong), var(--line-strong));
+  background-repeat: no-repeat;
+  background-size: 72% 12px, 52% 12px, 38% 12px;
+  background-position: 12px calc(100% - 66px), 12px calc(100% - 46px), 12px calc(100% - 26px);
+}
+.result-card.skeleton-card::before {
+  content: ""; position: absolute; z-index: 0;
+  left: 12px; right: 12px; top: 12px; height: 56%;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--line-strong) 45%, transparent);
+}
+
+/* 2. Empty and error states (.empty-panel is used for both): icon circle, title, text, centered action. */
+.empty-panel {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 56px 24px;
+  border-color: var(--line);
+}
+.empty-panel::before {
+  content: ""; flex: 0 0 auto;
+  width: 64px; height: 64px; border-radius: 50%; margin-bottom: 18px;
+  background: radial-gradient(circle, var(--blue) 0 6px, transparent 7px), var(--blue-soft);
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--blue-soft) 55%, transparent);
+}
+.empty-panel h3 { margin: 0 0 6px; }
+.empty-panel p { max-width: 38ch; margin: 0 auto 18px; line-height: 1.5; }
+.command-results > .filters-loading { text-align: center; padding: 28px 16px; }
+
+/* 3. Bottom sheet on phones: trip plan, share and booking shells. */
+@media (max-width: 767px) {
+  .trip-overlay, .share-overlay, #bookingModal { padding: 0; align-items: flex-end; }
+  #bookingModal { padding: 0; }
+  .trip-shell, .share-shell, #bookingModal .booking-panel {
+    position: relative; width: 100%; max-width: 100%;
+    max-height: calc(100dvh - 24px);
+    border-radius: 20px 20px 0 0;
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .trip-shell > *, .share-shell > * { flex-shrink: 0; }
+  .trip-shell::before, .share-shell::before, #bookingModal .booking-panel::before {
+    content: ""; position: absolute; z-index: 3; top: 8px; left: 50%;
+    width: 40px; height: 4px; margin-left: -20px; border-radius: 999px;
+    background: var(--line-strong); pointer-events: none;
+  }
+  .trip-head, .share-head, #bookingModal .booking-head {
+    position: sticky; top: 0; z-index: 2; background: var(--paper);
+  }
+  .trip-shell .trip-body { padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .share-shell .share-body { padding-bottom: calc(26px + env(safe-area-inset-bottom, 0px)); }
+  #bookingModal .booking-panel { padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+  .mobile-menu { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+  .assistant-fab { bottom: calc(22px + env(safe-area-inset-bottom, 0px)); right: calc(22px + env(safe-area-inset-right, 0px)); }
+  .toast-region { bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* 4. Safe area for the sticky header (no fixed bottom nav exists; mobile-nav lives in the full-screen menu). */
+.site-header { padding-top: env(safe-area-inset-top, 0px); }
+
+/* 5. Tap targets >= 44px on phones (visual icon size unchanged). */
+@media (max-width: 767px) {
+  .icon-button { min-width: 44px; min-height: 44px; }
+  .rating-pill { min-height: 44px; padding-left: 12px; padding-right: 12px; }
+  .text-button { min-height: 44px; min-width: 44px; }
+  [role="tab"] { min-height: 44px; min-width: 44px; }
+  .mobile-nav button, .mobile-nav a { min-height: 44px; }
+  [role="switch"] { min-width: 44px; min-height: 44px; }
+}
+
+/* 6. Score badge on the route screen must not wrap the % sign (trip.css .tx-score). */
+.tx-root .tx-score, .tx-score, .tx-score small { white-space: nowrap; }
+
+/* 7. Off-canvas search filters (fixed, translated 102%) add to scrollable width on phones.
+   Hide the closed drawer with display:none and animate the slide-in on open. */
+@keyframes n7-drawer-in { from { transform: translateX(102%); } to { transform: none; } }
+@media (max-width: 980px) {
+  .filters:not(.is-open) { display: none; }
+  .filters.is-open { animation: n7-drawer-in .22s ease; }
+}
+@media (max-width: 980px) and (prefers-reduced-motion: reduce) {
+  .filters.is-open { animation: none; }
+}
