@@ -43,19 +43,58 @@ func haversineMeters(lat1, lng1, lat2, lng2 float64) float64 {
 	return 2 * R * math.Asin(math.Sqrt(a))
 }
 
+const (
+	walkDetourFactor = 1.4  // прямая -> реальная длина пути по улицам
+	walkSpeedKmh     = 4.5  // скорость ходьбы
+	walkMaxTotalM    = 8000 // предел суммарной дистанции маршрута
+	walkMaxMinutes   = 150  // предел суммарного времени ходьбы
+	walkMaxLegM      = 3000 // предел одного перехода
+	walkMinStops     = 2    // меньше двух остановок - маршрута нет
+)
+
+// openAirCulture - точки категории culture, которые на самом деле под открытым небом
+// или активности: в дождь в «прогулку под крышей» они не попадают.
+var openAirCulture = map[string]bool{
+	"Скайпарк":                 true,
+	"Морской вокзал":           true,
+	"Дворец земледельцев":      true,
+	"Петропавловская крепость": true,
+	"Новодевичий монастырь":    true,
+}
+
+var openAirTags = map[string]bool{"активность": true, "горы": true, "море": true, "прогулка": true}
+
+// isIndoorPOI решает, можно ли считать точку «под крышей».
+func isIndoorPOI(poi POI) bool {
+	switch poi.Category {
+	case "spa", "coffee", "food":
+		return true
+	case "culture":
+		if openAirCulture[poi.Name] {
+			return false
+		}
+		for _, t := range poi.Tags {
+			if openAirTags[t] {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func walkCandidates(pois []POI, rainy bool) []POI {
 	out := make([]POI, 0)
-	allowed := map[string]bool{"walk": true, "park": true, "nature": true, "attraction": true}
-	if rainy {
-		allowed = map[string]bool{"culture": true, "spa": true, "coffee": true, "food": true}
-	} else {
-		allowed["culture"] = true
-	}
+	allowed := map[string]bool{"walk": true, "park": true, "nature": true, "attraction": true, "culture": true}
 	for _, poi := range pois {
 		if poi.Lat == 0 && poi.Lng == 0 {
 			continue
 		}
-		if !allowed[poi.Category] {
+		if rainy {
+			if !isIndoorPOI(poi) {
+				continue
+			}
+		} else if !allowed[poi.Category] {
 			continue
 		}
 		out = append(out, poi)
@@ -65,78 +104,67 @@ func walkCandidates(pois []POI, rainy bool) []POI {
 
 func planWalkingRoute(hotel HotelCard, pois []POI, pace string, rainy bool, seed int) *WalkingRoute {
 	candidates := walkCandidates(pois, rainy)
-	if len(candidates) < 2 {
+	if len(candidates) < walkMinStops {
 		return nil
-	}
-	// rotate candidates for variety across days
-	if seed > 0 && len(candidates) > 3 {
-		rot := seed % len(candidates)
-		rotated := append([]POI{}, candidates[rot:]...)
-		rotated = append(rotated, candidates[:rot]...)
-		candidates = rotated
 	}
 	count := 3
 	if pace == "active" {
 		count = 5
 	}
-	if count > len(candidates) {
-		count = len(candidates)
+	startLat, startLng := hotel.Meta.Lat, hotel.Meta.Lng
+	noHotel := startLat == 0 && startLng == 0
+	if noHotel {
+		startLat, startLng = candidates[0].Lat, candidates[0].Lng
 	}
-	// pick nearest-to-hotel first
+	// оставляем только то, что реально достижимо пешком от отеля
+	maxStraight := float64(walkMaxLegM) / walkDetourFactor
 	type scored struct {
 		poi  POI
 		dist float64
 	}
-	scoredList := make([]scored, 0, len(candidates))
+	near := make([]scored, 0, len(candidates))
 	for _, poi := range candidates {
-		scoredList = append(scoredList, scored{poi: poi, dist: haversineMeters(hotel.Meta.Lat, hotel.Meta.Lng, poi.Lat, poi.Lng)})
-	}
-	sort.Slice(scoredList, func(i, j int) bool { return scoredList[i].dist < scoredList[j].dist })
-	// prefer walkable cluster: keep only POIs within 3km; expand to 5km if needed
-	if len(scoredList) > count {
-		for _, radius := range []float64{3000, 5000} {
-			near := make([]scored, 0)
-			for _, sc := range scoredList {
-				if sc.dist <= radius {
-					near = append(near, sc)
-				}
-			}
-			if len(near) >= count {
-				scoredList = near
-				break
-			}
+		d := haversineMeters(startLat, startLng, poi.Lat, poi.Lng)
+		if d <= maxStraight {
+			near = append(near, scored{poi: poi, dist: d})
 		}
 	}
+	if len(near) < walkMinStops {
+		return nil
+	}
+	sort.SliceStable(near, func(i, j int) bool { return near[i].dist < near[j].dist })
 	pickCount := count * 2
-	if pickCount > len(scoredList) {
-		pickCount = len(scoredList)
+	if pickCount > len(near) {
+		pickCount = len(near)
 	}
-	pool := scoredList[:pickCount]
+	// окно по ближайшим, сдвигается по дням для разнообразия
+	offset := 0
+	if seed > 0 && len(near) > count {
+		offset = (seed * count) % len(near)
+	}
+	pool := make([]scored, 0, pickCount)
+	for i := 0; i < pickCount; i++ {
+		pool = append(pool, near[(offset+i)%len(near)])
+	}
 
-	// nearest neighbor
-	remaining := make([]scored, len(pool))
-	copy(remaining, pool)
+	// nearest neighbor от отеля
 	stops := make([]POI, 0, count)
-	curLat, curLng := hotel.Meta.Lat, hotel.Meta.Lng
-	if curLat == 0 && curLng == 0 && len(pool) > 0 {
-		curLat, curLng = pool[0].poi.Lat, pool[0].poi.Lng
-	}
-	for len(stops) < count && len(remaining) > 0 {
+	curLat, curLng := startLat, startLng
+	for len(stops) < count && len(pool) > 0 {
 		best := 0
 		bestDist := math.Inf(1)
-		for i, r := range remaining {
+		for i, r := range pool {
 			d := haversineMeters(curLat, curLng, r.poi.Lat, r.poi.Lng)
 			if d < bestDist {
 				bestDist = d
 				best = i
 			}
 		}
-		stops = append(stops, remaining[best].poi)
-		curLat, curLng = remaining[best].poi.Lat, remaining[best].poi.Lng
-		remaining = append(remaining[:best], remaining[best+1:]...)
+		stops = append(stops, pool[best].poi)
+		curLat, curLng = pool[best].poi.Lat, pool[best].poi.Lng
+		pool = append(pool[:best], pool[best+1:]...)
 	}
-	// 2-opt improvement
-	improve2Opt(stops)
+	improve2Opt(startLat, startLng, stops)
 	// build legs
 	routeStops := make([]WalkStop, 0, len(stops))
 	totalMeters := 0
@@ -146,11 +174,11 @@ func planWalkingRoute(hotel HotelCard, pois []POI, pace string, rainy bool, seed
 		curLat, curLng = stops[0].Lat, stops[0].Lng
 	}
 	for _, poi := range stops {
-		leg := haversineMeters(curLat, curLng, poi.Lat, poi.Lng) * 2.0
+		leg := haversineMeters(curLat, curLng, poi.Lat, poi.Lng) * walkDetourFactor
 		legM := int(leg)
-		legMin := int(leg/1000.0/4.5*60.0) + 1
-		if legMin < 1 {
-			legMin = 1
+		legMin := int(leg/1000.0/walkSpeedKmh*60.0) + 1
+		if legM > walkMaxLegM || totalMeters+legM > walkMaxTotalM || walkMinutes+legMin > walkMaxMinutes {
+			break
 		}
 		dwell := poi.Minutes
 		if dwell < 25 {
@@ -175,6 +203,9 @@ func planWalkingRoute(hotel HotelCard, pois []POI, pace string, rainy bool, seed
 		totalMeters += legM
 		walkMinutes += legMin
 		curLat, curLng = poi.Lat, poi.Lng
+	}
+	if len(routeStops) < walkMinStops {
+		return nil
 	}
 	totalMinutes := walkMinutes
 	for _, s := range routeStops {
@@ -223,28 +254,34 @@ func planWalkingRoute(hotel HotelCard, pois []POI, pace string, rainy bool, seed
 	}
 }
 
-func improve2Opt(stops []POI) {
-	if len(stops) < 4 {
+// improve2Opt улучшает открытый путь (старт в точке startLat/startLng, возврата нет).
+func improve2Opt(startLat, startLng float64, stops []POI) {
+	if len(stops) < 3 {
 		return
 	}
-	dist := func(a, b POI) float64 { return haversineMeters(a.Lat, a.Lng, b.Lat, b.Lng) }
+	at := func(i int) (float64, float64) {
+		if i < 0 {
+			return startLat, startLng
+		}
+		return stops[i].Lat, stops[i].Lng
+	}
+	d := func(i, j int) float64 {
+		la, lo := at(i)
+		lb, lob := at(j)
+		return haversineMeters(la, lo, lb, lob)
+	}
 	improved := true
 	for improved {
 		improved = false
-		for i := 1; i < len(stops)-1; i++ {
+		for i := 0; i < len(stops)-1; i++ {
 			for j := i + 1; j < len(stops); j++ {
-				// 2-opt: reverse segment [i..j]
-				prev := stops[i-1]
-				var next POI
+				cur := d(i-1, i)
+				nw := d(i-1, j)
 				if j+1 < len(stops) {
-					next = stops[j+1]
-				} else {
-					next = stops[0]
+					cur += d(j, j+1)
+					nw += d(i, j+1)
 				}
-				cur := dist(prev, stops[i]) + dist(stops[j], next)
-				newd := dist(prev, stops[j]) + dist(stops[i], next)
-				if newd+0.01 < cur {
-					// reverse segment
+				if nw+0.01 < cur {
 					for a, b := i, j; a < b; a, b = a+1, b-1 {
 						stops[a], stops[b] = stops[b], stops[a]
 					}
