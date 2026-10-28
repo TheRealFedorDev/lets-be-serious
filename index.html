@@ -2,13 +2,13 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#C8F86E">
   <meta name="description" content="О!дин — персональный поиск отелей: настроение, расстояние до еды и сервисов, страховка, гиды и экскурсии рядом. Один шаг до идеального отеля.">
   <title>О!дин — один шаг до идеального отеля</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23C8F86E'/%3E%3Ccircle cx='32' cy='32' r='16' fill='none' stroke='%231F4BDB' stroke-width='4'/%3E%3Ccircle cx='43' cy='21' r='5' fill='%231F4BDB'/%3E%3C/svg%3E">
   <link rel="preload" as="image" href="/assets/images/hotel-01.jpg">
-  <link rel="stylesheet" href="/assets/app.css?v=20261028e">
+  <link rel="stylesheet" href="/assets/app.css?v=20261029g">
 </head>
 <body>
   <header class="site-header" id="siteHeader">
@@ -27,7 +27,7 @@
         <button type="button" class="nav-link" data-nav="moods">Настроения</button>
         <button type="button" class="nav-link" data-nav="collections">Подборки</button>
         <button type="button" class="nav-link" data-nav="assistant">
-          AI-подбор
+          ИИ-подбор
           <span class="nav-spark" aria-hidden="true"></span>
         </button>
         <button type="button" class="nav-link" data-nav="trips">Поездки</button>
@@ -46,7 +46,7 @@
 
         <button type="button" class="ai-nav-button" id="assistantButton">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/></svg>
-          <span>AI-консьерж</span>
+          <span>ИИ-консьерж</span>
         </button>
 
         <button type="button" class="icon-button nav-favorites" data-account-action="favorites" aria-label="Избранное">
@@ -103,7 +103,7 @@
           <div class="hero-copy">
             <div class="eyebrow">
               <span class="eyebrow-dot"></span>
-              Ostrovok Hackathon 2026 · AI-подбор отелей
+              ИИ-подбор отелей и маршрутов
             </div>
             <h1>О!дин шаг<br>до <span>идеального</span> отеля</h1>
             <p class="hero-lead">Расскажите, каким должен быть отдых — а мы соберём отель, даты и маршрут. С настроением, расстояниями до еды и сервисов, страховкой и гидами.</p>
@@ -207,7 +207,7 @@
               <span class="trust-icon">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/></svg>
               </span>
-              <div><strong>AI понимает настроение</strong><span>«Тихий отель у моря» — уже запрос</span></div>
+              <div><strong>ИИ понимает настроение</strong><span>«Тихий отель у моря» — уже запрос</span></div>
             </div>
             <div class="trust-item">
               <span class="trust-icon">
@@ -221,7 +221,7 @@
             <div class="section-head">
               <div>
                 <span class="section-kicker">Поиск по настроению</span>
-                <h2>Куда хочется сейчас?</h2>
+                <h2>Какое настроение у поездки?</h2>
                 <p>Не город, а состояние. Выберите настроение — покажем отели, которые ему соответствуют.</p>
               </div>
               <button type="button" class="text-button" data-nav="search">
@@ -260,7 +260,7 @@
             <div class="section-head">
               <div>
                 <span class="section-kicker">Вдохновение</span>
-                <h2>Куда хочется?</h2>
+                <h2>Популярные направления</h2>
                 <p>Города, горы и маленькие места с собственной атмосферой.</p>
               </div>
               <div class="section-controls">
@@ -302,8 +302,8 @@
           <section class="section ai-section" id="aiSection">
             <div class="ai-panel">
               <div class="ai-panel-copy">
-                <span class="section-kicker section-kicker-light">О!дин AI</span>
-                <h2>Опишите поездку.<br>AI соберёт остальное.</h2>
+                <span class="section-kicker section-kicker-light">О!дин ИИ</span>
+                <h2>Опишите поездку.<br>ИИ соберёт остальное.</h2>
                 <p>«Тихий отель у моря, завтраки до полудня, кофейня без толпы» — просто скажите, что важно. Локальная модель отвечает сразу и знает наши отели.</p>
                 <form class="ai-prompt-form" id="aiPromptForm">
                   <input id="aiPromptInput" type="text" maxlength="240" placeholder="Например: тихий отель для двоих у моря" aria-label="Опишите поездку">
@@ -313,7 +313,7 @@
                 </form>
                 <div class="ai-panel-meta">
                   <span class="status-dot"></span>
-                  Qwen 2.5 3B · работает локально
+                   · работает локально
                   <span class="meta-divider"></span>
                   без передачи данных наружу
                 </div>
@@ -325,7 +325,7 @@
                     <svg viewBox="0 0 24 24"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/></svg>
                   </span>
                   <div>
-                    <strong>О!дин AI</strong>
+                    <strong>О!дин ИИ</strong>
                     <span><span class="status-dot"></span> на связи</span>
                   </div>
                   <span class="preview-local">local</span>
@@ -351,7 +351,7 @@
               <div class="stat-item"><strong id="statHotels">42</strong><span>отобранных отелей</span></div>
               <div class="stat-item"><strong id="statDestinations">12</strong><span>направлений</span></div>
               <div class="stat-item"><strong id="statRating">9.3</strong><span>средний рейтинг</span></div>
-              <div class="stat-item"><strong>24/7</strong><span>AI-консьерж</span></div>
+              <div class="stat-item"><strong>24/7</strong><span>ИИ-консьерж</span></div>
             </div>
           </section>
         </div>
@@ -518,7 +518,7 @@
         <span>Сервис</span>
         <button type="button" data-nav="search">Найти отель</button>
         <button type="button" data-nav="moods">Настроения</button>
-        <button type="button" data-nav="assistant">AI-подбор</button>
+        <button type="button" data-nav="assistant">ИИ-подбор</button>
         <button type="button" data-nav="trips">Мои поездки</button>
       </div>
       <div class="footer-column">
@@ -529,15 +529,15 @@
         <button type="button" data-destination="altai">Алтай</button>
       </div>
       <div class="footer-note">
-        <span class="footer-ai-badge"><span class="status-dot"></span> AI работает локально</span>
+        <span class="footer-ai-badge"><span class="status-dot"></span> ИИ работает локально</span>
         <p>Демо-платежи. Данные хранятся на вашем сервере. © 2026 О!дин.</p>
       </div>
     </div>
   </footer>
 
-  <button type="button" class="assistant-fab" id="assistantFab" aria-label="Открыть AI-консьержа">
+  <button type="button" class="assistant-fab" id="assistantFab" aria-label="Открыть ИИ-консьержа">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/></svg>
-    <span>AI</span>
+    <span>ИИ</span>
   </button>
 
   <div class="popover theme-panel" id="themePanel" aria-hidden="true">
@@ -583,7 +583,7 @@
       <div class="theme-preview-nav">
         <span class="preview-logo">О!дин</span>
         <span>Отели</span>
-        <span>AI-подбор</span>
+        <span>ИИ-подбор</span>
         <span class="preview-cta">Найти</span>
       </div>
     </div>
@@ -604,13 +604,13 @@
       <button type="button" data-nav="home">Отели</button>
       <button type="button" data-nav="moods">Настроения</button>
       <button type="button" data-nav="search">Подборки</button>
-      <button type="button" data-nav="assistant">AI-подбор</button>
+      <button type="button" data-nav="assistant">ИИ-подбор</button>
       <button type="button" data-nav="trips">Мои поездки</button>
     </nav>
     <div class="mobile-menu-actions">
       <button type="button" class="secondary-button" id="mobileSearchOpen">Поиск по сайту</button>
       <button type="button" class="secondary-button" id="mobileThemeOpen">Настроить меню</button>
-      <button type="button" class="primary-button" id="mobileAssistantOpen">AI-консьерж</button>
+      <button type="button" class="primary-button" id="mobileAssistantOpen">ИИ-консьерж</button>
     </div>
     <div class="mobile-menu-foot">
       <span class="status-dot"></span>
@@ -832,7 +832,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/></svg>
         </span>
         <div>
-          <h2 id="assistantTitle">О!дин AI</h2>
+          <h2 id="assistantTitle">О!дин ИИ</h2>
           <span class="assistant-status"><span class="status-dot" id="assistantStatusDot"></span><span id="assistantStatusText">подключаю модель...</span></span>
         </div>
       </div>
@@ -840,7 +840,7 @@
         <button type="button" class="icon-button" id="assistantClear" aria-label="Очистить диалог">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/></svg>
         </button>
-        <button type="button" class="icon-button" id="assistantClose" aria-label="Закрыть AI-консьержа">
+        <button type="button" class="icon-button" id="assistantClose" aria-label="Закрыть ИИ-консьержа">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
         </button>
       </div>
@@ -853,7 +853,7 @@
       <button type="button" class="suggestion-chip" data-prompt="Куда поехать на выходные с завтраками и архитектурой?">Выходные с архитектурой</button>
     </div>
     <form class="assistant-form" id="assistantForm">
-      <input id="assistantInput" type="text" maxlength="600" placeholder="Спросите про отель, город или маршрут..." autocomplete="off" aria-label="Сообщение AI-консьержу">
+      <input id="assistantInput" type="text" maxlength="600" placeholder="Спросите про отель, город или маршрут..." autocomplete="off" aria-label="Сообщение ИИ-консьержу">
       <button type="submit" id="assistantSend" aria-label="Отправить сообщение">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
       </button>
@@ -865,6 +865,18 @@
 
   <datalist id="destinationOptions"></datalist>
 
-  <script src="/assets/app.js?v=20261028e"></script>
+  <script src="/assets/vendor/qrcode.js"></script>
+  <script src="/assets/app.js?v=20261029g"></script>
+  <link rel="stylesheet" href="/assets/motion.css?v=20261029g">
+  <link rel="stylesheet" href="/assets/trip.css?v=20261029g">
+  <link rel="stylesheet" href="/assets/match.css?v=20261029g">
+  <link rel="stylesheet" href="/assets/audit.css?v=20261029g">
+  <script src="/assets/motion.js?v=20261029g" defer></script>
+  <script src="/assets/trip.js?v=20261029g" defer></script>
+  <script src="/assets/match.js?v=20261029g" defer></script>
+  <script src="/assets/audit.js?v=20261029g" defer></script>
+  <link rel="stylesheet" href="/assets/a11y.css?v=20261029g">
+  <script src="/assets/a11y.js?v=20261029g" defer></script>
+  <script src="/assets/deeplink.js?v=20261029g" defer></script>
 </body>
 </html>

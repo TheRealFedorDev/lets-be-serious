@@ -246,8 +246,13 @@ func routes(api *API, cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/destinations", api.handleDestinations)
 	mux.HandleFunc("GET /api/search", api.handleSearch)
 	mux.HandleFunc("POST /api/trip/plan", api.handleTripPlan)
+	mux.HandleFunc("POST /api/walk/plan", api.handleWalkPlan)
 	mux.HandleFunc("GET /api/demo/scenarios", api.handleDemoScenarios)
 	mux.HandleFunc("GET /api/demo/scenario/{id}", api.handleDemoScenario)
+	mux.HandleFunc("POST /api/match/what-if", api.handleWhatIf)
+	mux.HandleFunc("POST /api/trips/share", api.handleShareCreate)
+	mux.HandleFunc("GET /api/share/{slug}", api.handleShareJSON)
+	mux.HandleFunc("GET /share/{slug}", api.handleSharePage)
 	mux.HandleFunc("GET /api/moods", api.handleMoods)
 	mux.HandleFunc("GET /api/weather", api.handleWeather)
 	mux.HandleFunc("GET /api/hotels/{slug}", api.handleHotel)
@@ -417,6 +422,29 @@ func queryBool(query url.Values, key string) bool {
 	return value == "1" || value == "true" || value == "on" || value == "yes"
 }
 
+func (api *API) handleWalkPlan(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		HotelSlug string `json:"hotelSlug"`
+		Pace      string `json:"pace"`
+		Rainy     bool   `json:"rainy"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте параметры прогулки")
+		return
+	}
+	detail, err := api.store.HotelBySlug(r.Context(), api.optionalUserID(r), req.HotelSlug, "", "", 2)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Отель не найден")
+		return
+	}
+	pois, _ := api.store.poisForDestination(r.Context(), detail.DestinationSlug, "", 32)
+	if req.Pace != "active" {
+		req.Pace = "calm"
+	}
+	walk := planWalkingRoute(detail.HotelCard, pois, req.Pace, req.Rainy, 0)
+	writeJSON(w, http.StatusOK, walk)
+}
+
 func (api *API) handleMoods(w http.ResponseWriter, r *http.Request) {
 	hotels, err := api.store.allHotelCards(r.Context(), nil)
 	if err != nil {
@@ -468,6 +496,28 @@ func (api *API) handleHotel(w http.ResponseWriter, r *http.Request) {
 	breakdown := BuildMatchBreakdown(detail.HotelCard, SearchParams{Guests: guests, Mood: mood, Tags: tags}, mood, NormalizeTags(tags))
 	detail.MatchDetail = &breakdown
 	writeJSON(w, http.StatusOK, detail)
+}
+
+func (api *API) handleWhatIf(w http.ResponseWriter, r *http.Request) {
+	var req WhatIfRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте параметры расчёта")
+		return
+	}
+	if strings.TrimSpace(req.Slug) == "" {
+		writeError(w, http.StatusBadRequest, "Отель не найден")
+		return
+	}
+	result, err := api.store.WhatIf(r.Context(), api.optionalUserID(r), req)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusNotFound, "Отель не найден")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось пересчитать варианты")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (api *API) handlePOI(w http.ResponseWriter, r *http.Request) {

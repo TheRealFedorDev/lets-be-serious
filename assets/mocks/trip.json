@@ -1,0 +1,450 @@
+{
+ "destination": "sochi",
+ "city": "Сочи",
+ "image": "/assets/images/sochi.jpg",
+ "checkIn": "2026-10-29",
+ "checkOut": "2026-11-01",
+ "nights": 3,
+ "guests": 2,
+ "pace": "calm",
+ "hotel": {
+  "id": 14,
+  "slug": "aqua-family",
+  "name": "Aqua Family",
+  "city": "Сочи",
+  "image": "/assets/images/hotel-09.jpg",
+  "address": "Виноградная, 21",
+  "shortDescription": "Семейный отель рядом с аквапарком и детской комнатой.",
+  "rating": 9,
+  "reviews": 1642,
+  "priceFrom": 14200,
+  "priceBreakdown": {
+   "room": 14200,
+   "taxes": 1704,
+   "fees": 710,
+   "breakfast": 3600,
+   "total": 20214
+  }
+ },
+ "match": {
+  "score": 99,
+  "verdict": "Идеальное совпадение",
+  "reason": "Aqua Family в Сочи, до моря 9 мин, до метро 12 мин, еда в 4 мин, под бюджет 80 000 ₽."
+ },
+ "days": [
+  {
+   "date": "2026-10-29",
+   "title": "Приезд и первый вечер",
+   "weather": {
+    "condition": "rain",
+    "description": "Возможен дождь — стоит выбрать отель с крытыми зонами",
+    "tempC": 12,
+    "icon": "🌧️",
+    "tags": [
+     "Крытый бассейн",
+     "Спа",
+     "Кинотеатр рядом",
+     "Кондиционер"
+    ]
+   },
+   "blocks": [
+    {
+     "time": "14:00",
+     "type": "transfer",
+     "title": "Заселение",
+     "place": "Aqua Family",
+     "note": "Оставьте вещи и выдохните",
+     "price": 0,
+     "minutes": 20
+    },
+    {
+     "time": "16:00",
+     "type": "walk",
+     "title": "Первая прогулка рядом",
+     "place": "Aqua Family",
+     "price": 0,
+     "minutes": 60
+    },
+    {
+     "time": "19:30",
+     "type": "food",
+     "title": "Ужин без спешки",
+     "place": "Кофе и море",
+     "price": 3600,
+     "minutes": 3,
+     "poiId": 9
+    }
+   ],
+   "total": 3600,
+   "walk": {
+    "title": "Прогулка под крышей",
+    "summary": "3 остановок · 82038 м пешком · около 1180 минут",
+    "indoor": true,
+    "stops": [
+     {
+      "poiId": 9,
+      "name": "Кофе и море",
+      "category": "coffee",
+      "address": "Приморская набережная, 8",
+      "description": "Маленькая кофейня на набережной с видом на воду.",
+      "lat": 43.569500000000005,
+      "lng": 39.7391,
+      "dwell": 25,
+      "legMeters": 480,
+      "legMinutes": 7,
+      "schematic": true
+     },
+     {
+      "poiId": 10,
+      "name": "Синий сад",
+      "category": "food",
+      "address": "Черноморская, 3",
+      "description": "Сезонные морепродукты, овощи с огня и длинные завтраки.",
+      "lat": 43.5705888,
+      "lng": 39.7310768,
+      "dwell": 25,
+      "legMeters": 1315,
+      "legMinutes": 18
+     },
+     {
+      "poiId": 12,
+      "name": "Скайпарк",
+      "category": "culture",
+      "address": "Красная Поляна",
+      "description": "Смотровая площадка и мосты над ущельем.",
+      "lat": 43.6779574,
+      "lng": 40.2069574,
+      "dwell": 35,
+      "legMeters": 80243,
+      "legMinutes": 1070
+     }
+    ],
+    "distanceMeters": 82038,
+    "walkMinutes": 1095,
+    "totalMinutes": 1180,
+    "mapUrl": "https://yandex.ru/maps/?rtext=43.570000,39.742000~43.569500,39.739100~43.570589,39.731077~43.677957,40.206957&rtt=pd",
+    "schematic": true
+   }
+  },
+  {
+   "date": "2026-10-30",
+   "title": "День 2 · вода и набережная",
+   "weather": {
+    "condition": "mild",
+    "description": "Комфортная погода для прогулок",
+    "tempC": 20,
+    "icon": "🌤️",
+    "tags": [
+     "Прогулки",
+     "Веранда",
+     "Велопрокат",
+     "Кафе на террасе"
+    ]
+   },
+   "blocks": [
+    {
+     "time": "09:30",
+     "type": "food",
+     "title": "Завтрак и кофе",
+     "place": "Синий сад",
+     "price": 1300,
+     "poiId": 10
+    },
+    {
+     "time": "11:00",
+     "type": "activity",
+     "title": "Место рядом",
+     "place": "Кофе и море",
+     "note": "Катер вдоль берега с остановкой для купания.",
+     "price": 2400,
+     "minutes": 12,
+     "poiId": 9
+    },
+    {
+     "time": "13:30",
+     "type": "food",
+     "title": "Обед",
+     "price": 2400
+    },
+    {
+     "time": "16:30",
+     "type": "rest",
+     "title": "Тихий час",
+     "note": "Кофе, книга или просто ничего",
+     "price": 900
+    },
+    {
+     "time": "19:30",
+     "type": "food",
+     "title": "Ужин",
+     "place": "Синий сад",
+     "price": 3800
+    }
+   ],
+   "total": 10800,
+   "walk": {
+    "title": "Пешая прогулка по району",
+    "summary": "3 остановок · 6897 м пешком · около 219 минут",
+    "indoor": false,
+    "stops": [
+     {
+      "poiId": 89,
+      "name": "Дендрарий",
+      "category": "park",
+      "address": "Курортный проспект, 74",
+      "description": "Пальмы, панорама моря и канатка наверх — главный парк города.",
+      "lat": 43.5713513,
+      "lng": 39.7430145,
+      "dwell": 60,
+      "legMeters": 342,
+      "legMinutes": 5
+     },
+     {
+      "poiId": 85,
+      "name": "Набережная Мзымты",
+      "category": "walk",
+      "address": "Набережная реки Мзымта",
+      "description": "Прогулка вдоль реки от рынка до моря, с видом на горы.",
+      "lat": 43.5655,
+      "lng": 39.743100000000005,
+      "dwell": 35,
+      "legMeters": 1301,
+      "legMinutes": 18,
+      "schematic": true
+     },
+     {
+      "poiId": 90,
+      "name": "Морской порт",
+      "category": "walk",
+      "address": "Порт, 1",
+      "description": "Колоннада, причал и набережная — стартовая точка большой прогулки.",
+      "lat": 43.5811268,
+      "lng": 39.7186411,
+      "dwell": 30,
+      "legMeters": 5254,
+      "legMinutes": 71
+     }
+    ],
+    "distanceMeters": 6897,
+    "walkMinutes": 94,
+    "totalMinutes": 219,
+    "mapUrl": "https://yandex.ru/maps/?rtext=43.570000,39.742000~43.571351,39.743015~43.565500,39.743100~43.581127,39.718641&rtt=pd",
+    "schematic": true
+   }
+  },
+  {
+   "date": "2026-10-31",
+   "title": "День 3 · под крышей",
+   "weather": {
+    "condition": "rain",
+    "description": "Возможен дождь — стоит выбрать отель с крытыми зонами",
+    "tempC": 19,
+    "icon": "🌧️",
+    "tags": [
+     "Крытый бассейн",
+     "Спа",
+     "Кинотеатр рядом",
+     "Кондиционер"
+    ]
+   },
+   "blocks": [
+    {
+     "time": "09:30",
+     "type": "food",
+     "title": "Завтрак и кофе",
+     "place": "Кофе и море",
+     "price": 1300,
+     "poiId": 9
+    },
+    {
+     "time": "11:00",
+     "type": "activity",
+     "title": "Культурная точка",
+     "place": "Синий сад",
+     "note": "Смотровая площадка и мосты над ущельем.",
+     "price": 4800,
+     "minutes": 35,
+     "poiId": 10
+    },
+    {
+     "time": "13:30",
+     "type": "food",
+     "title": "Обед",
+     "price": 2400
+    },
+    {
+     "time": "16:30",
+     "type": "rest",
+     "title": "Тихий час",
+     "note": "Кофе, книга или просто ничего",
+     "price": 900
+    },
+    {
+     "time": "19:30",
+     "type": "food",
+     "title": "Ужин",
+     "place": "Кофе и море",
+     "price": 3800
+    }
+   ],
+   "total": 13200,
+   "walk": {
+    "title": "Прогулка под крышей",
+    "summary": "3 остановок · 82038 м пешком · около 1180 минут",
+    "indoor": true,
+    "stops": [
+     {
+      "poiId": 9,
+      "name": "Кофе и море",
+      "category": "coffee",
+      "address": "Приморская набережная, 8",
+      "description": "Маленькая кофейня на набережной с видом на воду.",
+      "lat": 43.569500000000005,
+      "lng": 39.7391,
+      "dwell": 25,
+      "legMeters": 480,
+      "legMinutes": 7,
+      "schematic": true
+     },
+     {
+      "poiId": 10,
+      "name": "Синий сад",
+      "category": "food",
+      "address": "Черноморская, 3",
+      "description": "Сезонные морепродукты, овощи с огня и длинные завтраки.",
+      "lat": 43.5705888,
+      "lng": 39.7310768,
+      "dwell": 25,
+      "legMeters": 1315,
+      "legMinutes": 18
+     },
+     {
+      "poiId": 12,
+      "name": "Скайпарк",
+      "category": "culture",
+      "address": "Красная Поляна",
+      "description": "Смотровая площадка и мосты над ущельем.",
+      "lat": 43.6779574,
+      "lng": 40.2069574,
+      "dwell": 35,
+      "legMeters": 80243,
+      "legMinutes": 1070
+     }
+    ],
+    "distanceMeters": 82038,
+    "walkMinutes": 1095,
+    "totalMinutes": 1180,
+    "mapUrl": "https://yandex.ru/maps/?rtext=43.570000,39.742000~43.569500,39.739100~43.570589,39.731077~43.677957,40.206957&rtt=pd",
+    "schematic": true
+   }
+  },
+  {
+   "date": "2026-11-01",
+   "title": "Завтрак и выезд",
+   "weather": {
+    "condition": "cold",
+    "description": "Холодно — выбирайте отели с отоплением и сауной",
+    "tempC": -3,
+    "icon": "❄️",
+    "tags": [
+     "Отопление",
+     "Сауна",
+     "Камин",
+     "Зимние развлечения"
+    ]
+   },
+   "blocks": [
+    {
+     "time": "09:00",
+     "type": "food",
+     "title": "Завтрак",
+     "price": 1400
+    },
+    {
+     "time": "11:00",
+     "type": "walk",
+     "title": "Последняя прогулка",
+     "price": 0,
+     "minutes": 50
+    },
+    {
+     "time": "12:00",
+     "type": "transfer",
+     "title": "Выезд из отеля",
+     "place": "Aqua Family",
+     "price": 0,
+     "minutes": 20
+    }
+   ],
+   "total": 1400,
+   "walk": {
+    "title": "Пешая прогулка по району",
+    "summary": "3 остановок · 6897 м пешком · около 219 минут",
+    "indoor": false,
+    "stops": [
+     {
+      "poiId": 89,
+      "name": "Дендрарий",
+      "category": "park",
+      "address": "Курортный проспект, 74",
+      "description": "Пальмы, панорама моря и канатка наверх — главный парк города.",
+      "lat": 43.5713513,
+      "lng": 39.7430145,
+      "dwell": 60,
+      "legMeters": 342,
+      "legMinutes": 5
+     },
+     {
+      "poiId": 85,
+      "name": "Набережная Мзымты",
+      "category": "walk",
+      "address": "Набережная реки Мзымта",
+      "description": "Прогулка вдоль реки от рынка до моря, с видом на горы.",
+      "lat": 43.5655,
+      "lng": 39.743100000000005,
+      "dwell": 35,
+      "legMeters": 1301,
+      "legMinutes": 18,
+      "schematic": true
+     },
+     {
+      "poiId": 90,
+      "name": "Морской порт",
+      "category": "walk",
+      "address": "Порт, 1",
+      "description": "Колоннада, причал и набережная — стартовая точка большой прогулки.",
+      "lat": 43.5811268,
+      "lng": 39.7186411,
+      "dwell": 30,
+      "legMeters": 5254,
+      "legMinutes": 71
+     }
+    ],
+    "distanceMeters": 6897,
+    "walkMinutes": 94,
+    "totalMinutes": 219,
+    "mapUrl": "https://yandex.ru/maps/?rtext=43.570000,39.742000~43.571351,39.743015~43.565500,39.743100~43.581127,39.718641&rtt=pd",
+    "schematic": true
+   }
+  }
+ ],
+ "budget": {
+  "total": 93842,
+  "perDay": 23460,
+  "split": {
+   "activities": 9000,
+   "food": 20000,
+   "stay": 60642,
+   "transport": 4200
+  },
+  "fits": false,
+  "delta": 13842,
+  "perPerson": 46921
+ },
+ "tips": [
+  "На 29 окт обещают дождь — уличные точки заменены на музеи и SPA.",
+  "Завтрак не включён: заложили кафе рядом — это честнее, чем доплата на месте.",
+  "До пляжа 9 мин пешком — можно ходить в тапочках.",
+  "Бюджет превышен на 13 842 ₽. Самый быстрый способ — отель на категорию ниже или убрать одно платное SPA."
+ ]
+}

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const seedContentVersion = "5"
+const seedContentVersion = "7"
 
 type seedDestination struct {
 	Slug        string
@@ -56,6 +56,9 @@ type seedPOI struct {
 	Minutes         int
 	Tags            []string
 	PriceLevel      int
+	Lat             float64
+	Lng             float64
+	Schematic       bool
 }
 
 func mkMeta(lat, lng float64, insured, guides, soundproof, parking, pool bool, discount, food, metro, beach int) HotelMeta {
@@ -189,24 +192,24 @@ func seedBaseData(ctx context.Context, store *Store) error {
 			ShortDescription: "Тихие номера в двух шагах от Патриарших и большие завтраки.",
 			Address:          "Малая Бронная, 18", Image: "/assets/images/hotel-02.jpg",
 			Rating: 9.4, Reviews: 731, Price: 15200,
-			Tags:      []string{"tishina", "dizayn", "zavtraki", "metro", "shumoizolyaciya", "dlya-dvoih"},
-			Meta:      mkMeta(55.764, 37.592, true, false, true, true, false, 12, 2, 4, 0),
+			Tags: []string{"tishina", "dizayn", "zavtraki", "metro", "shumoizolyaciya", "dlya-dvoih"},
+			Meta: mkMeta(55.764, 37.592, true, false, true, true, false, 12, 2, 4, 0),
 		},
 		{
 			DestinationSlug: "moscow", Slug: "gorky-loft", Name: "Gorky Loft",
 			ShortDescription: "Лофт с кофейней на первом этаже и парком через дорогу.",
 			Address:          "Крымский Вал, 9", Image: "/assets/images/hotel-08.jpg",
 			Rating: 9.0, Reviews: 489, Price: 8800,
-			Tags:      []string{"kofe", "dizayn", "eda", "metro", "budget", "parki"},
-			Meta:      mkMeta(55.729, 37.601, false, false, false, false, false, 18, 3, 7, 0),
+			Tags: []string{"kofe", "dizayn", "eda", "metro", "budget", "parki"},
+			Meta: mkMeta(55.729, 37.601, false, false, false, false, false, 18, 3, 7, 0),
 		},
 		{
 			DestinationSlug: "moscow", Slug: "romanov-court", Name: "Romanov Court",
 			ShortDescription: "Особняк с историей, театральной программой и спа.",
 			Address:          "Пречистенка, 24", Image: "/assets/images/hotel-03.jpg",
 			Rating: 9.3, Reviews: 612, Price: 22400,
-			Tags:      []string{"istoriya", "istoricheskoe-zdanie", "spa", "teatraly", "dostoprimechatelnosti", "kosmos-ceny"},
-			Meta:      mkMeta(55.739, 37.593, true, true, true, true, false, 5, 4, 8, 0),
+			Tags: []string{"istoriya", "istoricheskoe-zdanie", "spa", "teatraly", "dostoprimechatelnosti", "kosmos-ceny"},
+			Meta: mkMeta(55.739, 37.593, true, true, true, true, false, 5, 4, 8, 0),
 		},
 		{
 			DestinationSlug: "saint-petersburg", Slug: "neva-atelier", Name: "NEVA Atelier",
@@ -231,24 +234,24 @@ func seedBaseData(ctx context.Context, store *Store) error {
 			ShortDescription: "Доходный дом на Фонтанке с высокими окнами и театральной афишей.",
 			Address:          "Набережная Фонтанки, 12", Image: "/assets/images/hotel-07.jpg",
 			Rating: 9.1, Reviews: 524, Price: 11900,
-			Tags:      []string{"istoriya", "reki", "kofe", "teatraly", "metro"},
-			Meta:      mkMeta(59.937, 30.335, false, true, false, false, false, 11, 3, 6, 0),
+			Tags: []string{"istoriya", "reki", "kofe", "teatraly", "metro"},
+			Meta: mkMeta(59.937, 30.335, false, true, false, false, false, 11, 3, 6, 0),
 		},
 		{
 			DestinationSlug: "saint-petersburg", Slug: "baltic-boutique", Name: "Baltic Boutique",
 			ShortDescription: "Небольшой бутик-отель с идеальной звукоизоляцией и поздними завтраками.",
 			Address:          "Гражданская, 8", Image: "/assets/images/hotel-01.jpg",
 			Rating: 9.5, Reviews: 402, Price: 17800, Featured: true,
-			Tags:      []string{"butik", "tishina", "zavtraki", "shumoizolyaciya", "dlya-dvoih", "spa"},
-			Meta:      mkMeta(59.936, 30.312, true, true, true, false, false, 6, 3, 7, 0),
+			Tags: []string{"butik", "tishina", "zavtraki", "shumoizolyaciya", "dlya-dvoih", "spa"},
+			Meta: mkMeta(59.936, 30.312, true, true, true, false, false, 6, 3, 7, 0),
 		},
 		{
 			DestinationSlug: "saint-petersburg", Slug: "nevsky-grand", Name: "Nevsky Grand",
 			ShortDescription: "Просторный отель на Невском для города без машины.",
 			Address:          "Невский проспект, 88", Image: "/assets/images/hotel-04.jpg",
 			Rating: 8.8, Reviews: 1330, Price: 7600,
-			Tags:      []string{"budget", "metro", "dostoprimechatelnosti", "eda", "torgovye-centry"},
-			Meta:      mkMeta(59.932, 30.360, false, false, false, false, false, 20, 2, 2, 0),
+			Tags: []string{"budget", "metro", "dostoprimechatelnosti", "eda", "torgovye-centry"},
+			Meta: mkMeta(59.932, 30.360, false, false, false, false, false, 20, 2, 2, 0),
 		},
 		{
 			DestinationSlug: "sochi", Slug: "marea-resort", Name: "Marea Resort",
@@ -273,16 +276,16 @@ func seedBaseData(ctx context.Context, store *Store) error {
 			ShortDescription: "Номера с видом на воду и веранда, где встречают закат.",
 			Address:          "Черноморская, 3", Image: "/assets/images/hotel-03.jpg",
 			Rating: 9.4, Reviews: 1094, Price: 19500, Featured: true,
-			Tags:      []string{"more", "plyazh", "zakaty", "vid-na-more", "romantika", "restoran"},
-			Meta:      mkMeta(43.579, 39.718, true, true, false, true, false, 10, 3, 8, 1),
+			Tags: []string{"more", "plyazh", "zakaty", "vid-na-more", "romantika", "restoran"},
+			Meta: mkMeta(43.579, 39.718, true, true, false, true, false, 10, 3, 8, 1),
 		},
 		{
 			DestinationSlug: "sochi", Slug: "aqua-family", Name: "Aqua Family",
 			ShortDescription: "Семейный отель рядом с аквапарком и детской комнатой.",
 			Address:          "Виноградная, 21", Image: "/assets/images/hotel-09.jpg",
 			Rating: 9.0, Reviews: 1642, Price: 14200,
-			Tags:      []string{"semya", "akvapark", "bassein", "detskaya", "plyazh", "parkovka"},
-			Meta:      mkMeta(43.570, 39.742, false, false, false, true, true, 14, 4, 12, 9),
+			Tags: []string{"semya", "akvapark", "bassein", "detskaya", "plyazh", "parkovka"},
+			Meta: mkMeta(43.570, 39.742, false, false, false, true, true, 14, 4, 12, 9),
 		},
 		{
 			DestinationSlug: "kazan", Slug: "kazan-house", Name: "Kazan House",
@@ -307,16 +310,16 @@ func seedBaseData(ctx context.Context, store *Store) error {
 			ShortDescription: "Отель с бассейном и спа в пяти минутах от Кремля.",
 			Address:          "Кремлёвская, 8", Image: "/assets/images/hotel-02.jpg",
 			Rating: 9.3, Reviews: 921, Price: 13800,
-			Tags:      []string{"spa", "bassein", "dostoprimechatelnosti", "otkisaem", "restoran", "parkovka"},
-			Meta:      mkMeta(55.797, 49.106, true, true, true, true, true, 9, 3, 7, 0),
+			Tags: []string{"spa", "bassein", "dostoprimechatelnosti", "otkisaem", "restoran", "parkovka"},
+			Meta: mkMeta(55.797, 49.106, true, true, true, true, true, 9, 3, 7, 0),
 		},
 		{
 			DestinationSlug: "kazan", Slug: "tatar-yard", Name: "Tatar Yard",
 			ShortDescription: "Двор с национальной кухней и семейными номерами.",
 			Address:          "Баумана, 36", Image: "/assets/images/hotel-05.jpg",
 			Rating: 9.2, Reviews: 604, Price: 9400,
-			Tags:      []string{"narodnaya-kuhnya", "eda", "istoriya", "kofe", "semya"},
-			Meta:      mkMeta(55.790, 49.120, false, true, false, false, false, 13, 2, 5, 0),
+			Tags: []string{"narodnaya-kuhnya", "eda", "istoriya", "kofe", "semya"},
+			Meta: mkMeta(55.790, 49.120, false, true, false, false, false, 13, 2, 5, 0),
 		},
 		{
 			DestinationSlug: "kaliningrad", Slug: "amber-yard", Name: "Amber Yard",
@@ -332,16 +335,16 @@ func seedBaseData(ctx context.Context, store *Store) error {
 			ShortDescription: "Дюны, сосны и море в десяти минутах от номера.",
 			Address:          "Верхнеозёрная, 6", Image: "/assets/images/hotel-12.jpg",
 			Rating: 9.4, Reviews: 517, Price: 13100, Featured: true,
-			Tags:      []string{"more", "plyazh", "tishina", "parkovka", "vid-na-more", "les"},
-			Meta:      mkMeta(54.720, 20.480, true, true, true, true, false, 8, 5, 11, 6),
+			Tags: []string{"more", "plyazh", "tishina", "parkovka", "vid-na-more", "les"},
+			Meta: mkMeta(54.720, 20.480, true, true, true, true, false, 8, 5, 11, 6),
 		},
 		{
 			DestinationSlug: "kaliningrad", Slug: "kant-house", Name: "Kant House",
 			ShortDescription: "Небольшой отель в историческом доме у острова Канта.",
 			Address:          "Канта, 14", Image: "/assets/images/hotel-06.jpg",
 			Rating: 9.0, Reviews: 288, Price: 8900,
-			Tags:      []string{"istoriya", "istoricheskoe-zdanie", "kofe", "dostoprimechatelnosti", "eda"},
-			Meta:      mkMeta(54.712, 20.508, false, true, false, false, false, 15, 2, 8, 15),
+			Tags: []string{"istoriya", "istoricheskoe-zdanie", "kofe", "dostoprimechatelnosti", "eda"},
+			Meta: mkMeta(54.712, 20.508, false, true, false, false, false, 15, 2, 8, 15),
 		},
 		{
 			DestinationSlug: "altai", Slug: "altai-ridge", Name: "Altai Ridge",
@@ -357,166 +360,168 @@ func seedBaseData(ctx context.Context, store *Store) error {
 			ShortDescription: "Дома у реки с панорамными окнами и телескопом.",
 			Address:          "Катунская, 3", Image: "/assets/images/hotel-01.jpg",
 			Rating: 9.7, Reviews: 214, Price: 17400,
-			Tags:      []string{"les", "reki", "zvezdy", "tishina", "ekoteh", "spa"},
-			Meta:      mkMeta(51.395, 85.988, true, true, true, true, false, 7, 10, 0, 0),
+			Tags: []string{"les", "reki", "zvezdy", "tishina", "ekoteh", "spa"},
+			Meta: mkMeta(51.395, 85.988, true, true, true, true, false, 7, 10, 0, 0),
 		},
 		{
 			DestinationSlug: "altai", Slug: "farm-retreat", Name: "Farm Retreat",
 			ShortDescription: "Ферма с деревянными домами, животными и завтраками из печи.",
 			Address:          "Береговая, 7", Image: "/assets/images/hotel-09.jpg",
 			Rating: 9.3, Reviews: 176, Price: 12600,
-			Tags:      []string{"ferma", "les", "semya", "s-zhivotnymi", "zavtraki"},
-			Meta:      mkMeta(51.410, 86.020, false, true, false, true, false, 12, 12, 0, 0),
+			Tags: []string{"ferma", "les", "semya", "s-zhivotnymi", "zavtraki"},
+			Meta: mkMeta(51.410, 86.020, false, true, false, true, false, 12, 12, 0, 0),
 		},
 		{
 			DestinationSlug: "yekaterinburg", Slug: "constructivist", Name: "Constructivist",
 			ShortDescription: "Дизайн-отель в памятнике конструктивизма.",
 			Address:          "Малышева, 22", Image: "/assets/images/hotel-04.jpg",
 			Rating: 9.2, Reviews: 486, Price: 8400,
-			Tags:      []string{"dizayn", "istoriya", "kofe", "metro", "budget"},
-			Meta:      mkMeta(56.837, 60.602, false, true, true, false, false, 16, 3, 4, 0),
+			Tags: []string{"dizayn", "istoriya", "kofe", "metro", "budget"},
+			Meta: mkMeta(56.837, 60.602, false, true, true, false, false, 16, 3, 4, 0),
 		},
 		{
 			DestinationSlug: "yekaterinburg", Slug: "ural-panorama", Name: "Ural Panorama",
 			ShortDescription: "Панорамный отель с видом на город и Урал.",
 			Address:          "Горького, 45", Image: "/assets/images/hotel-08.jpg",
 			Rating: 9.4, Reviews: 703, Price: 11800, Featured: true,
-			Tags:      []string{"gory", "panorama", "spa", "parkovka", "shumoizolyaciya"},
-			Meta:      mkMeta(56.830, 60.610, true, true, true, true, false, 9, 4, 6, 0),
+			Tags: []string{"gory", "panorama", "spa", "parkovka", "shumoizolyaciya"},
+			Meta: mkMeta(56.830, 60.610, true, true, true, true, false, 9, 4, 6, 0),
 		},
 		{
 			DestinationSlug: "yekaterinburg", Slug: "iset-hotel", Name: "Iset Hotel",
 			ShortDescription: "Отель на набережной Исети с кофейней и завтраками.",
 			Address:          "Ленина, 5", Image: "/assets/images/hotel-02.jpg",
 			Rating: 9.0, Reviews: 391, Price: 7200,
-			Tags:      []string{"reki", "eda", "kofe", "metro", "skidka"},
-			Meta:      mkMeta(56.840, 60.615, false, false, false, false, false, 22, 2, 3, 0),
+			Tags: []string{"reki", "eda", "kofe", "metro", "skidka"},
+			Meta: mkMeta(56.840, 60.615, false, false, false, false, false, 22, 2, 3, 0),
 		},
 		{
 			DestinationSlug: "nizhny-novgorod", Slug: "strelka-house", Name: "Strelka House",
 			ShortDescription: "Закаты над Волгой из каждого номера.",
 			Address:          "Нижневолжская набережная, 11", Image: "/assets/images/hotel-11.jpg",
 			Rating: 9.5, Reviews: 618, Price: 12400, Featured: true,
-			Tags:      []string{"zakaty", "reki", "dizayn", "zavtraki", "dlya-dvoih", "panorama"},
-			Meta:      mkMeta(56.330, 44.002, true, true, true, false, false, 8, 3, 7, 0),
+			Tags: []string{"zakaty", "reki", "dizayn", "zavtraki", "dlya-dvoih", "panorama"},
+			Meta: mkMeta(56.330, 44.002, true, true, true, false, false, 8, 3, 7, 0),
 		},
 		{
 			DestinationSlug: "nizhny-novgorod", Slug: "kremlin-view", Name: "Kremlin View",
 			ShortDescription: "Семейный отель рядом с кремлём и канатной дорогой.",
 			Address:          "Большая Покровская, 18", Image: "/assets/images/hotel-05.jpg",
 			Rating: 9.1, Reviews: 844, Price: 9800,
-			Tags:      []string{"istoriya", "dostoprimechatelnosti", "eda", "parkovka", "semya"},
-			Meta:      mkMeta(56.324, 44.010, false, true, false, true, false, 14, 2, 5, 0),
+			Tags: []string{"istoriya", "dostoprimechatelnosti", "eda", "parkovka", "semya"},
+			Meta: mkMeta(56.324, 44.010, false, true, false, true, false, 14, 2, 5, 0),
 		},
 		{
 			DestinationSlug: "nizhny-novgorod", Slug: "volga-breeze", Name: "Volga Breeze",
 			ShortDescription: "Недорогой отель у реки с кофейней на первом этаже.",
 			Address:          "Рождественская, 24", Image: "/assets/images/hotel-07.jpg",
 			Rating: 8.9, Reviews: 512, Price: 6900,
-			Tags:      []string{"budget", "reki", "kofe", "metro", "skidka"},
-			Meta:      mkMeta(56.328, 43.995, false, false, false, false, false, 21, 3, 6, 0),
+			Tags: []string{"budget", "reki", "kofe", "metro", "skidka"},
+			Meta: mkMeta(56.328, 43.995, false, false, false, false, false, 21, 3, 6, 0),
 		},
 		{
 			DestinationSlug: "irkutsk", Slug: "baikal-gate", Name: "Baikal Gate",
 			ShortDescription: "База для поездок на Байкал с гидами и трансфером.",
 			Address:          "Байкальская, 30", Image: "/assets/images/hotel-10.jpg",
 			Rating: 9.5, Reviews: 472, Price: 13900,
-			Tags:      []string{"ozera", "les", "priklyucheniya", "ekskursii", "guides", "parkovka"},
-			Meta:      mkMeta(52.280, 104.280, true, true, false, true, false, 9, 4, 7, 0),
+			Tags: []string{"ozera", "les", "priklyucheniya", "ekskursii", "guides", "parkovka"},
+			Meta: mkMeta(52.280, 104.280, true, true, false, true, false, 9, 4, 7, 0),
 		},
 		{
 			DestinationSlug: "irkutsk", Slug: "listvyanka-lodge", Name: "Listvyanka Lodge",
 			ShortDescription: "Лодж у Байкала с панорамными окнами и баней.",
 			Address:          "Седова, 2", Image: "/assets/images/hotel-12.jpg",
 			Rating: 9.6, Reviews: 338, Price: 16200, Featured: true,
-			Tags:      []string{"ozera", "tishina", "zvezdy", "ekoteh", "spa", "les"},
-			Meta:      mkMeta(51.860, 104.870, true, true, true, true, false, 7, 9, 0, 0),
+			Tags: []string{"ozera", "tishina", "zvezdy", "ekoteh", "spa", "les"},
+			Meta: mkMeta(51.860, 104.870, true, true, true, true, false, 7, 9, 0, 0),
 		},
 		{
 			DestinationSlug: "irkutsk", Slug: "irkutsk-passage", Name: "Irkutsk Passage",
 			ShortDescription: "Городской отель в историческом центре.",
 			Address:          "Карла Маркса, 14", Image: "/assets/images/hotel-04.jpg",
 			Rating: 8.9, Reviews: 296, Price: 7100,
-			Tags:      []string{"istoriya", "kofe", "eda", "metro", "budget"},
-			Meta:      mkMeta(52.289, 104.302, false, false, false, false, false, 19, 2, 5, 0),
+			Tags: []string{"istoriya", "kofe", "eda", "metro", "budget"},
+			Meta: mkMeta(52.289, 104.302, false, false, false, false, false, 19, 2, 5, 0),
 		},
 		{
 			DestinationSlug: "vladivostok", Slug: "ocean-ridge", Name: "Ocean Ridge",
 			ShortDescription: "Панорама океана, спа и ресторан на верхнем этаже.",
 			Address:          "Светланская, 51", Image: "/assets/images/hotel-11.jpg",
 			Rating: 9.6, Reviews: 688, Price: 18600, Featured: true,
-			Tags:      []string{"more", "vid-na-more", "zakaty", "spa", "restoran", "panorama"},
-			Meta:      mkMeta(43.118, 131.882, true, true, true, true, true, 8, 3, 6, 4),
+			Tags: []string{"more", "vid-na-more", "zakaty", "spa", "restoran", "panorama"},
+			Meta: mkMeta(43.118, 131.882, true, true, true, true, true, 8, 3, 6, 4),
 		},
 		{
 			DestinationSlug: "vladivostok", Slug: "golden-horn", Name: "Golden Horn",
 			ShortDescription: "Отель над бухтой с завтраками из локальных продуктов.",
 			Address:          "Алеутская, 17", Image: "/assets/images/hotel-07.jpg",
 			Rating: 9.2, Reviews: 941, Price: 11200,
-			Tags:      []string{"more", "panorama", "eda", "metro", "skidka", "kofe"},
-			Meta:      mkMeta(43.116, 131.889, false, true, false, false, false, 16, 2, 4, 8),
+			Tags: []string{"more", "panorama", "eda", "metro", "skidka", "kofe"},
+			Meta: mkMeta(43.116, 131.889, false, true, false, false, false, 16, 2, 4, 8),
 		},
 		{
 			DestinationSlug: "vladivostok", Slug: "russky-breeze", Name: "Russky Breeze",
 			ShortDescription: "Семейный отель с бассейном рядом с набережной.",
 			Address:          "Набережная Цесаревича, 5", Image: "/assets/images/hotel-09.jpg",
 			Rating: 9.0, Reviews: 405, Price: 9600,
-			Tags:      []string{"plyazh", "semya", "parkovka", "bassein", "akvapark", "more"},
-			Meta:      mkMeta(43.113, 131.900, false, false, false, true, true, 13, 4, 9, 5),
+			Tags: []string{"plyazh", "semya", "parkovka", "bassein", "akvapark", "more"},
+			Meta: mkMeta(43.113, 131.900, false, false, false, true, true, 13, 4, 9, 5),
 		},
 		{
 			DestinationSlug: "murmansk", Slug: "aurora-lodge", Name: "Aurora Lodge",
 			ShortDescription: "Охота за северным сиянием с гидом и тёплым спа.",
 			Address:          "Полярные Зори, 4", Image: "/assets/images/hotel-10.jpg",
 			Rating: 9.6, Reviews: 352, Price: 14900, Featured: true,
-			Tags:      []string{"polyarnoe-siyanie", "zima", "zvezdy", "tishina", "spa", "guides"},
-			Meta:      mkMeta(68.960, 33.078, true, true, true, true, false, 6, 5, 0, 0),
+			Tags: []string{"polyarnoe-siyanie", "zima", "zvezdy", "tishina", "spa", "guides"},
+			Meta: mkMeta(68.960, 33.078, true, true, true, true, false, 6, 5, 0, 0),
 		},
 		{
 			DestinationSlug: "murmansk", Slug: "arctic-pier", Name: "Arctic Pier",
 			ShortDescription: "Вид на океан и полярную ночь из панорамных окон.",
 			Address:          "Морская, 12", Image: "/assets/images/hotel-03.jpg",
 			Rating: 9.2, Reviews: 511, Price: 10800,
-			Tags:      []string{"more", "zima", "kofe", "restoran", "parkovka", "panorama"},
-			Meta:      mkMeta(68.955, 33.070, true, false, true, true, false, 12, 3, 8, 3),
+			Tags: []string{"more", "zima", "kofe", "restoran", "parkovka", "panorama"},
+			Meta: mkMeta(68.955, 33.070, true, false, true, true, false, 12, 3, 8, 3),
 		},
 		{
 			DestinationSlug: "murmansk", Slug: "severny-dom", Name: "Severny Dom",
 			ShortDescription: "Деревянный дом с сауной и завтраками у камина.",
 			Address:          "Северная, 8", Image: "/assets/images/hotel-06.jpg",
 			Rating: 9.0, Reviews: 264, Price: 8700,
-			Tags:      []string{"zima", "les", "semya", "s-zhivotnymi", "zavtraki", "tishina"},
-			Meta:      mkMeta(68.970, 33.090, false, true, false, true, false, 15, 6, 0, 0),
+			Tags: []string{"zima", "les", "semya", "s-zhivotnymi", "zavtraki", "tishina"},
+			Meta: mkMeta(68.970, 33.090, false, true, false, true, false, 15, 6, 0, 0),
 		},
 		{
 			DestinationSlug: "suzdal", Slug: "suzdal-estate", Name: "Suzdal Estate",
 			ShortDescription: "Усадьба с яблоневым садом и тихими номерами.",
 			Address:          "Кремлёвская, 9", Image: "/assets/images/hotel-06.jpg",
 			Rating: 9.7, Reviews: 431, Price: 15800, Featured: true,
-			Tags:      []string{"istoriya", "istoricheskoe-zdanie", "tishina", "zavtraki", "dlya-dvoih", "parki"},
-			Meta:      mkMeta(56.418, 40.447, true, true, true, true, false, 7, 5, 0, 0),
+			Tags: []string{"istoriya", "istoricheskoe-zdanie", "tishina", "zavtraki", "dlya-dvoih", "parki"},
+			Meta: mkMeta(56.418, 40.447, true, true, true, true, false, 7, 5, 0, 0),
 		},
 		{
 			DestinationSlug: "suzdal", Slug: "farm-suzdal", Name: "Farm Suzdal",
 			ShortDescription: "Ферма с животными, народной кухней и домами у пруда.",
 			Address:          "Пушкарская, 21", Image: "/assets/images/hotel-09.jpg",
 			Rating: 9.4, Reviews: 287, Price: 11200,
-			Tags:      []string{"ferma", "semya", "s-zhivotnymi", "narodnaya-kuhnya", "parkovka", "les"},
-			Meta:      mkMeta(56.425, 40.440, false, true, false, true, false, 10, 4, 0, 0),
+			Tags: []string{"ferma", "semya", "s-zhivotnymi", "narodnaya-kuhnya", "parkovka", "les"},
+			Meta: mkMeta(56.425, 40.440, false, true, false, true, false, 10, 4, 0, 0),
 		},
 		{
 			DestinationSlug: "suzdal", Slug: "kamenka-house", Name: "Kamenka House",
 			ShortDescription: "Камерный дом с собственной атмосферой и кофейней.",
 			Address:          "Ленина, 14", Image: "/assets/images/hotel-02.jpg",
 			Rating: 9.1, Reviews: 198, Price: 8400,
-			Tags:      []string{"svoya-atmosfera", "istoriya", "kofe", "eda", "skidka", "tishina"},
-			Meta:      mkMeta(56.421, 40.452, false, false, true, false, false, 18, 3, 0, 0),
+			Tags: []string{"svoya-atmosfera", "istoriya", "kofe", "eda", "skidka", "tishina"},
+			Meta: mkMeta(56.421, 40.452, false, false, true, false, false, 18, 3, 0, 0),
 		},
 	}
 
 	pois := basePOIs()
 	pois = append(pois, newCityPOIs()...)
 	pois = append(pois, excursionPOIs()...)
+	pois = append(pois, attractionPOIs()...)
+	pois = applyPOICoords(pois)
 
 	tx, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -671,10 +676,11 @@ func seedBaseData(ctx context.Context, store *Store) error {
 	for index, poi := range pois {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO pois
-			 (destination_slug, name, category, description, address, distance, minutes, tags_json, price_level, sort_order)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (destination_slug, name, category, description, address, distance, minutes, tags_json, price_level, sort_order, lat, lng, schematic)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			poi.DestinationSlug, poi.Name, poi.Category, poi.Description,
 			poi.Address, poi.Distance, poi.Minutes, encodeStrings(poi.Tags), poi.PriceLevel, index,
+			poi.Lat, poi.Lng, boolInt(poi.Schematic),
 		); err != nil {
 			return err
 		}

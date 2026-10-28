@@ -2,6 +2,17 @@
 *.exe
 *.dll
 *.db
+*.db-shm
+*.db-wal
 *.gguf
 *.log
 *.zip
+odin-new.exe~
+opencode.jsonc
+hello.cmd
+README_START.md
+
+# local tooling
+.claude/
+.playwright-mcp/
+odin.db.bak

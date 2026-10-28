@@ -286,7 +286,8 @@ input[type="date"] { min-width: 0; }
 .search-field-copy select { cursor: pointer; appearance: none; }
 .search-date-pair { display: flex; align-items: center; gap: 8px; width: 100%; }
 .search-date-pair .search-field-copy { width: 50%; }
-.search-date-pair input[type="date"] { font-size: 13px; }
+.search-date-pair input[type="date"] { font-size: 10px; }
+.search-field-copy input[type="date"]::-webkit-calendar-picker-indicator { width: 14px; height: 14px; opacity: 0.5; margin-left: -2px; }
 .date-separator { width: 1px; height: 28px; background: var(--line); flex: 0 0 auto; }
 .search-submit { min-height: 58px; padding: 0 26px; border-radius: 12px; font-size: 15px; }
 .search-submit svg { width: 18px; height: 18px; }
@@ -620,13 +621,14 @@ input[type="date"] { min-width: 0; }
 .pie-legend { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 160px; }
 .pie-legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); }
 .pie-legend-item span:first-child { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
-.pie-legend-item strong { margin-left: auto; color: var(--ink); }
+.pie-legend-item strong { margin-left: auto; color: var(--ink); font-weight: 500; }
 .filter-rating-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .rating-pill {
   padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px;
   background: #fff; font-size: 11.5px; font-weight: 700; color: var(--ink-soft);
 }
 .rating-pill:hover { border-color: var(--accent); color: var(--accent); }
+.rating-pill.is-active { background: var(--blue-soft); border-color: var(--accent); color: var(--accent); }
 .mood-pill {
   display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid var(--line);
   border-radius: 9px; background: #fff; font-size: 12px; font-weight: 650; text-align: left;
@@ -1460,3 +1462,331 @@ input[type="date"] { min-width: 0; }
 }
 .trip-scenarios { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 .trip-scenarios > span { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-right: 4px; }
+
+/* ---------- What-if ---------- */
+.whatif { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line-strong); }
+.whatif-loading { font-size: 12.5px; color: var(--muted); }
+.whatif-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-bottom: 10px; }
+.whatif-head strong { font-size: 13.5px; }
+.whatif-head span { font-size: 11.5px; color: var(--muted); }
+.whatif-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.whatif-option {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.whatif-option:hover { border-color: var(--line-strong); box-shadow: var(--shadow-xs); transform: translateY(-1px); }
+.whatif-option.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--blue-soft); }
+.whatif-option strong { font-size: 12.5px; color: var(--ink); }
+.whatif-option small { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.whatif-delta { margin-top: 2px; font-size: 11px; font-weight: 700; color: var(--muted); }
+.whatif-delta.is-up { color: var(--success); }
+.whatif-delta.is-down { color: var(--danger); }
+.whatif-result { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.whatif-result strong { color: var(--ink); }
+
+@media (max-width: 560px) {
+  .whatif-options { grid-template-columns: 1fr; }
+}
+
+/* ---------- Assistant concierge actions ---------- */
+.assistant-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.assistant-action {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+.assistant-action:hover { border-color: var(--accent); background: var(--blue-soft); transform: translateY(-1px); }
+.assistant-action.is-primary { background: var(--lime); border-color: var(--lime); color: var(--ink); }
+.assistant-action.is-primary:hover { background: var(--lime-soft); border-color: var(--lime); }
+.assistant-action svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Share trip ---------- */
+.trip-result-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.share-overlay {
+  position: fixed; inset: 0; z-index: 140;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: rgba(23, 26, 34, .5);
+  backdrop-filter: blur(6px);
+}
+.share-overlay.hidden { display: none; }
+.share-shell {
+  width: min(560px, 100%);
+  background: var(--paper);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.share-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 14px; border-bottom: 1px solid var(--line); }
+.share-head h2 { margin: 4px 0 0; font-size: 20px; }
+.share-body { padding: 20px 24px 26px; }
+.share-hint { margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+.share-grid { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; }
+.share-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+.share-link { display: block; margin: 5px 0 12px; font-size: 13px; color: var(--accent); word-break: break-all; text-decoration: none; }
+.share-link:hover { text-decoration: underline; }
+.share-buttons { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.share-qr { width: 142px; height: 142px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+.share-qr svg { width: 100%; height: 100%; display: block; }
+@media (max-width: 560px) {
+  .share-overlay { padding: 0; align-items: flex-end; }
+  .share-shell { border-radius: 24px 24px 0 0; }
+  .share-grid { grid-template-columns: 1fr; }
+  .share-qr { margin: 0 auto; }
+}
+
+.trip-walk { margin-top: 12px; padding: 12px; border: 1px solid rgba(0,0,0,.08); border-radius: 12px; background: rgba(255,255,255,.6); }
+.trip-walk-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.trip-walk-head strong { font-size: 14px; }
+.trip-walk-head span { font-size: 12px; color: #555; }
+.walk-map { width: 100%; height: auto; display: block; margin: 8px 0; }
+.walk-line { fill: none; stroke: #1F4BDB; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 4 3; }
+.walk-dot { fill: #1F4BDB; stroke: #fff; stroke-width: 2; }
+.walk-dot-text { fill: #fff; font-size: 10px; font-weight: 700; }
+.walk-stops { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
+.walk-stop { display: flex; gap: 10px; align-items: flex-start; }
+.walk-stop-num { width: 22px; height: 22px; border-radius: 50%; background: #1F4BDB; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.walk-stop-copy { display: flex; flex-direction: column; gap: 2px; }
+.walk-stop-copy strong { font-size: 13px; }
+.walk-stop-copy small { font-size: 12px; color: #555; }
+.walk-stop-meta { font-size: 11px; color: #888; }
+.walk-map-link { display: inline-block; margin-top: 8px; font-size: 13px; color: #1F4BDB; text-decoration: none; }
+.nearby-map-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+.nearby-map-card { background: #fff; border-radius: 16px; max-width: 920px; width: 100%; max-height: 90vh; overflow: auto; padding: 16px; }
+.nearby-map-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.nearby-map-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.nearby-map-totals { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: #555; margin-top: 8px; }
+.nearby-map-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.nearby-map-table th, .nearby-map-table td { padding: 6px 8px; border-bottom: 1px solid rgba(0,0,0,.08); text-align: left; }
+.nearby-map-table tfoot td { font-weight: 700; }
+@media (max-width: 720px) { .nearby-map-body { grid-template-columns: 1fr; } }
+.nearby-transport { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.nearby-transport h4 { margin: 0 0 4px; font-size: 13px; }
+.transport-card { display: flex; flex-direction: column; gap: 2px; padding: 8px; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; font-size: 12px; }
+.transport-card strong { font-size: 13px; }
+.transport-card span { color: #1F4BDB; font-weight: 600; }
+.transport-card small { color: #888; }
+/* N7: states & mobile */
+
+/* 1. Search skeletons: photo + 3 lines painted on the existing .skeleton-card (markup unchanged).
+   motion.css owns ::after (shimmer), so the photo block uses ::before. */
+.result-card.skeleton-card {
+  background-color: var(--line);
+  background-image:
+    linear-gradient(var(--line-strong), var(--line-strong)),
+    linear-gradient(var(--line-strong), var(--line-strong)),
+    linear-gradient(var(--line-strong), var(--line-strong));
+  background-repeat: no-repeat;
+  background-size: 72% 12px, 52% 12px, 38% 12px;
+  background-position: 12px calc(100% - 66px), 12px calc(100% - 46px), 12px calc(100% - 26px);
+}
+.result-card.skeleton-card::before {
+  content: ""; position: absolute; z-index: 0;
+  left: 12px; right: 12px; top: 12px; height: 56%;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--line-strong) 45%, transparent);
+}
+
+/* 2. Empty and error states (.empty-panel is used for both): icon circle, title, text, centered action. */
+.empty-panel {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 56px 24px;
+  border-color: var(--line);
+}
+.empty-panel::before {
+  content: ""; flex: 0 0 auto;
+  width: 64px; height: 64px; border-radius: 50%; margin-bottom: 18px;
+  background: radial-gradient(circle, var(--blue) 0 6px, transparent 7px), var(--blue-soft);
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--blue-soft) 55%, transparent);
+}
+.empty-panel h3 { margin: 0 0 6px; }
+.empty-panel p { max-width: 38ch; margin: 0 auto 18px; line-height: 1.5; }
+.command-results > .filters-loading { text-align: center; padding: 28px 16px; }
+
+/* 3. Bottom sheet on phones: trip plan, share and booking shells. */
+@media (max-width: 767px) {
+  .trip-overlay, .share-overlay, #bookingModal { padding: 0; align-items: flex-end; }
+  #bookingModal { padding: 0; }
+  .trip-shell, .share-shell, #bookingModal .booking-panel {
+    position: relative; width: 100%; max-width: 100%;
+    max-height: calc(100dvh - 24px);
+    border-radius: 20px 20px 0 0;
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .trip-shell > *, .share-shell > * { flex-shrink: 0; }
+  .trip-shell::before, .share-shell::before, #bookingModal .booking-panel::before {
+    content: ""; position: absolute; z-index: 3; top: 8px; left: 50%;
+    width: 40px; height: 4px; margin-left: -20px; border-radius: 999px;
+    background: var(--line-strong); pointer-events: none;
+  }
+  .trip-head, .share-head, #bookingModal .booking-head {
+    position: sticky; top: 0; z-index: 2; background: var(--paper);
+  }
+  .trip-shell .trip-body { padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .share-shell .share-body { padding-bottom: calc(26px + env(safe-area-inset-bottom, 0px)); }
+  #bookingModal .booking-panel { padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+  .mobile-menu { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+  .assistant-fab { bottom: calc(22px + env(safe-area-inset-bottom, 0px)); right: calc(22px + env(safe-area-inset-right, 0px)); }
+  .toast-region { bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* 4. Safe area for the sticky header (no fixed bottom nav exists; mobile-nav lives in the full-screen menu). */
+.site-header { padding-top: env(safe-area-inset-top, 0px); }
+
+/* 5. Tap targets >= 44px on phones (visual icon size unchanged). */
+@media (max-width: 767px) {
+  .icon-button { min-width: 44px; min-height: 44px; }
+  .rating-pill { min-height: 44px; padding-left: 12px; padding-right: 12px; }
+  .text-button { min-height: 44px; min-width: 44px; }
+  [role="tab"] { min-height: 44px; min-width: 44px; }
+  .mobile-nav button, .mobile-nav a { min-height: 44px; }
+  [role="switch"] { min-width: 44px; min-height: 44px; }
+}
+
+/* 6. Score badge on the route screen must not wrap the % sign (trip.css .tx-score). */
+.tx-root .tx-score, .tx-score, .tx-score small { white-space: nowrap; }
+
+/* 7. Off-canvas search filters (fixed, translated 102%) add to scrollable width on phones.
+   Hide the closed drawer with display:none and animate the slide-in on open. */
+@keyframes n7-drawer-in { from { transform: translateX(102%); } to { transform: none; } }
+@media (max-width: 980px) {
+  .filters:not(.is-open) { display: none; }
+  .filters.is-open { animation: n7-drawer-in .22s ease; }
+}
+@media (max-width: 980px) and (prefers-reduced-motion: reduce) {
+  .filters.is-open { animation: none; }
+}
+
+/* 8. Assistant FAB vs. search controls.
+   Phones: on the search screen the FAB moves to the top-right, under the header, so it never sits on the
+   results toolbar ("Рядом со мной / Сортировка / Фильтры"). Open filters drawer hides the FAB entirely. */
+@media (max-width: 767px) {
+  body:has(#searchView:not(.hidden)) .assistant-fab {
+    top: calc(var(--header-h) + 8px); bottom: auto;
+    right: 14px; height: 44px; padding: 0 12px 0 10px;
+  }
+}
+body:has(.filters.is-open) .assistant-fab { opacity: 0; pointer-events: none; transition: opacity .16s ease; }
+
+/* 9. "Карта города" modal on phones: bottom sheet, no fixed widths, content never leaves the viewport. */
+@media (max-width: 767px) {
+  .nearby-map-modal { padding: 0; align-items: flex-end; }
+  .nearby-map-card, .nearby-map-card * { box-sizing: border-box; }
+  .nearby-map-card {
+    width: 100%; max-width: 100%; min-width: 0;
+    max-height: calc(100dvh - 24px); border-radius: 20px 20px 0 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .nearby-map-head { position: sticky; top: 0; z-index: 1; background: #fff; padding-bottom: 8px; }
+  .nearby-map-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .nearby-map-left, .nearby-map-right { min-width: 0; max-width: 100%; }
+  .nearby-map-right { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .nearby-map-table { font-size: 11px; }
+  .nearby-map-table th, .nearby-map-table td { padding: 6px 5px; white-space: nowrap; }
+  .nearby-map-totals { gap: 8px; }
+  .transport-card { max-width: 100%; }
+  .nearby-map-card a.walk-map-link { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+}
+
+/* 10. QA polish (visual.md findings 9, 19, 20, 28, 29, 30). Appended only; earlier rules untouched. */
+
+/* 9. Desktop filters sidebar: the aside itself scrolls (thin scrollbar), so every filter, including "Доступность", is reachable. */
+@media (min-width: 981px) {
+  .filters {
+    max-height: calc(100vh - var(--header-h) - 36px);
+    overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+  }
+  .filters-body { flex: 0 0 auto; overflow: visible; }
+}
+
+/* 19. Phones: sort select gets its own full-width row so "Сначала подходящие" fits; "Рядом со мной" and "Фильтры" share the row below. */
+@media (max-width: 720px) {
+  .results-actions { flex-wrap: wrap; }
+  .results-actions .select-field { order: -1; flex: 1 1 100%; }
+}
+
+/* 20. Phone/tablet filter drawer: the list scrolls, the "Показать отели" button stays pinned to the bottom of the drawer. */
+@media (max-width: 980px) {
+  .filters { overflow: hidden; }
+  /* .view runs fadeUp with fill-mode "both", so #searchView stays the containing block of the fixed drawer and the drawer
+     became as tall as the page. Drop the view animation only while the drawer is open (the intro has long finished). */
+  body:has(.filters.is-open) #searchView { animation: none !important; transform: none !important; }
+  .filters-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .filters-apply {
+    position: sticky; bottom: 0; z-index: 2; flex: 0 0 auto;
+    width: 100%; margin: 0; border-radius: 0 0 15px 15px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -10px 18px -10px rgba(12, 18, 32, .22);
+  }
+}
+
+/* 28. Trip cards: labels at 12px or more; price gets a gap from the buttons and a "Итого" label (no such label in markup). */
+.trip-meta span, .trip-head span, .trip-code, .trip-status { font-size: 12px; }
+.trip-total { margin-right: 16px; }
+@media (max-width: 720px) { .trip-actions { row-gap: 12px; } }
+.trip-total::before {
+  content: "Итого "; font-size: 12px; font-weight: 600; letter-spacing: 0; color: var(--muted);
+}
+
+/* 29. Phones: toasts sit centred under the header, clear of the assistant FAB and the first card row. */
+@media (max-width: 767px) {
+  .toast-region {
+    top: calc(var(--header-h) + 8px + env(safe-area-inset-top, 0px));
+    bottom: auto; left: 50%; right: auto;
+    width: calc(100% - 32px); transform: translateX(-50%);
+    align-items: stretch;
+  }
+  .toast { max-width: none; width: 100%; }
+  /* On the search screen the FAB sits under the header too (rule 8), so it steps aside while a toast is shown. */
+  body:has(#toastRegion .toast) .assistant-fab { opacity: 0; pointer-events: none; transition: opacity .16s ease; }
+}
+
+/* 30. Phones: hotel page reads gallery, title, "Об отеле", passport, then booking. Sections are reordered with order;
+   .hotel-main is dissolved (display: contents) so its sections become flex items of .hotel-layout. */
+@media (max-width: 767px) {
+  .hotel-layout { display: flex; flex-direction: column; gap: 0; }
+  .hotel-main { display: contents; }
+  .hotel-main > .detail-head { order: 0; }
+  .hotel-main:has(> .match-passport) > section:nth-of-type(2) { order: 1; }
+  .hotel-main:not(:has(> .match-passport)) > section:nth-of-type(1) { order: 1; }
+  .hotel-main > .match-passport { order: 2; }
+  .hotel-side { order: 3; position: static; margin-top: 4px; }
+  .hotel-main > section { order: 4; }
+}
+
+/* 11. QA polish 2 (visual.md findings 41, 46, 47). Appended only; earlier rules untouched. */
+
+/* 41. Phones: booking step buttons stack full-width; the primary button sits on top, "Назад" / "Отмена" under it. */
+@media (max-width: 767px) {
+  .booking-actions { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .booking-actions > button { width: 100%; flex: 0 0 auto; min-width: 0; }
+}
+
+/* 46. Phones: assistant input is 16px so iOS Safari does not zoom on focus; assistant messages read at 14.5px. */
+@media (max-width: 767px) {
+  .assistant-form input,
+  .assistant-form textarea { font-size: 16px; }
+  .assistant-bubble { font-size: 14.5px; }
+}
+
+/* 47. Trip cards (My trips) reuse .trip-body / .trip-head from the trip-planner overlay, which added 26px (or 16px on phones)
+   of inner padding. Reset it inside the card so the title, status and rows share one left edge. */
+.trip-card .trip-body { padding: 18px; overflow: visible; }
+.trip-card .trip-head { padding: 0; border-bottom: 0; }

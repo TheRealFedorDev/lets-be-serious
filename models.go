@@ -92,6 +92,9 @@ type POI struct {
 	Tags            []string `json:"tags"`
 	PriceLevel      int      `json:"priceLevel"`
 	DestinationSlug string   `json:"destinationSlug,omitempty"`
+	Lat             float64  `json:"lat,omitempty"`
+	Lng             float64  `json:"lng,omitempty"`
+	Schematic       bool     `json:"schematic,omitempty"`
 }
 
 type HotelDetail struct {
@@ -107,6 +110,7 @@ type HotelDetail struct {
 	CheckOut    string          `json:"checkOut"`
 	Guests      int             `json:"guests"`
 	MatchDetail *MatchBreakdown `json:"matchDetail,omitempty"`
+	Walk        *WalkingRoute   `json:"walk,omitempty"`
 }
 
 type POIDetail struct {
@@ -192,12 +196,13 @@ type AssistantHotel struct {
 }
 
 type AssistantResponse struct {
-	Reply       string           `json:"reply"`
-	Source      string           `json:"source"`
-	Hotels      []AssistantHotel `json:"hotels"`
-	Places      []POI            `json:"places"`
-	Destination string           `json:"destination,omitempty"`
-	Focus       *AssistantHotel  `json:"focus,omitempty"`
+	Reply       string            `json:"reply"`
+	Source      string            `json:"source"`
+	Hotels      []AssistantHotel  `json:"hotels"`
+	Places      []POI             `json:"places"`
+	Destination string            `json:"destination,omitempty"`
+	Focus       *AssistantHotel   `json:"focus,omitempty"`
+	Actions     []AssistantAction `json:"actions,omitempty"`
 }
 
 type SearchResult struct {

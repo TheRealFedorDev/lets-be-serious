@@ -37,11 +37,12 @@ type TripBlock struct {
 }
 
 type TripDay struct {
-	Date    string      `json:"date"`
-	Title   string      `json:"title"`
-	Weather WeatherInfo `json:"weather"`
-	Blocks  []TripBlock `json:"blocks"`
-	Total   int         `json:"total"`
+	Date    string        `json:"date"`
+	Title   string        `json:"title"`
+	Weather WeatherInfo   `json:"weather"`
+	Blocks  []TripBlock   `json:"blocks"`
+	Total   int           `json:"total"`
+	Walk    *WalkingRoute `json:"walk,omitempty"`
 }
 
 type TripBudget struct {
@@ -176,6 +177,9 @@ func (s *Store) BuildTrip(ctx context.Context, userID int64, req TripRequest) (T
 	}
 	if score <= 0 {
 		score = int(hotel.Rating * 10)
+	}
+	if score > 100 {
+		score = 100
 	}
 
 	plan := TripPlan{
@@ -312,6 +316,7 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 			})
 		}
 
+		day.Walk = planWalkingRoute(hotel, pois, req.Pace, rainy, index)
 		for _, block := range day.Blocks {
 			day.Total += block.Price
 		}
@@ -425,7 +430,7 @@ func buildTripTips(destination Destination, hotel HotelCard, req TripRequest, pl
 		tips = append(tips, fmt.Sprintf("На %s обещают дождь — уличные точки заменены на музеи и SPA.", shortDate(rainyDay)))
 	}
 	if !containsString(hotel.Meta.TagSlugs, "zavtraki") {
-		tips = append(tips, "Завтрак не включён: заложили кафе рядом — это честнее, чем доплата на месте.")
+		tips = append(tips, "Завтрак заложен отдельно: кафе рядом, а не доплата на месте.")
 	}
 	if hotel.Meta.BeachMinutes > 0 {
 		tips = append(tips, fmt.Sprintf("До пляжа %d мин пешком — можно ходить в тапочках.", hotel.Meta.BeachMinutes))

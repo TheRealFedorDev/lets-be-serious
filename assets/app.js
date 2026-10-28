@@ -1435,11 +1435,13 @@ function pricePieMarkup(breakdown) {
     return slice;
   }).join("");
   const legend = items.map((item) => `<div class="pie-legend-item"><span style="background:${item.color}"></span><span>${escapeHTML(item.label)}</span><strong>${money(item.value)}</strong></div>`).join("");
-  return `<div class="price-pie"><div class="price-pie-visual"><svg viewBox="0 0 120 120" class="price-pie-svg">${slices}<text x="60" y="54" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#6d7381">Итого</text><text x="60" y="70" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="800" fill="#171a22">${money(total)}</text></svg><span class="pie-caption">за 1 ночь</span></div><div class="pie-legend">${legend}</div></div>`;
+  const totalRow = `<div class="pie-legend-item" style="border-top:1px solid #e0e0e0;padding-top:8px;margin-top:4px;font-weight:600"><span>Итого</span><strong>${money(total)}</strong></div>`;
+  return `<div class="price-pie"><div class="price-pie-visual"><svg viewBox="0 0 120 120" class="price-pie-svg">${slices}</svg><span class="pie-caption">за 1 ночь</span></div><div class="pie-legend">${legend}${totalRow}</div></div>`;
 }
 
-function matchPassportMarkup(match) {
+function matchPassportMarkup(match, hotel) {
   if (!match || !Array.isArray(match.factors) || !match.factors.length) return "";
+  const slug = (hotel && hotel.slug) || "";
   const factors = match.factors.slice(0, 7);
   const pros = (match.pros || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("");
   const cons = (match.cons || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("");
@@ -1470,6 +1472,9 @@ function matchPassportMarkup(match) {
         ${cons ? `<div><strong>Против</strong><ul>${cons}</ul></div>` : ""}
       </div>` : ""}
       <p class="match-passport-note">Вклады факторов складываются в итоговый балл. Никакой магии — только ваши параметры и данные отеля.</p>
+      <div class="whatif" id="whatIfBox" data-whatif-slug="${escapeHTML(slug)}">
+        <div class="whatif-loading">Считаем варианты «что если»…</div>
+      </div>
     </section>
   `;
 }
@@ -1487,7 +1492,7 @@ function renderHotelDetail(hotel) {
   const stars = Number(meta.stars || 0);
 
   const galleryMarkup = images.map((image, index) => `
-    <div class="gallery-shot" role="button" tabindex="0" aria-label="Фото ${index + 1}">
+    <div class="gallery-shot" role="button" tabindex="0" aria-label="Фото ${index + 1}" data-gallery-image="${escapeHTML(image)}">
       <img src="${escapeHTML(image)}" alt="${escapeHTML(hotel.name)}" loading="${index === 0 ? "eager" : "lazy"}">
       ${index === 4 && (hotel.gallery || []).length > 4 ? `<span class="gallery-more">+ ещё фото</span>` : ""}
     </div>
@@ -1579,7 +1584,7 @@ function renderHotelDetail(hotel) {
           <div class="detail-badges">${badges.join("")}</div>
         </div>
 
-        ${matchPassportMarkup(hotel.matchDetail)}
+        ${matchPassportMarkup(hotel.matchDetail, hotel)}
 
         <section class="detail-section">
           <h2>Об отеле</h2>
@@ -1609,7 +1614,7 @@ function renderHotelDetail(hotel) {
         <section class="detail-section">
           <div class="nearby-head">
             <h2>Что рядом</h2>
-            <button type="button" class="text-button small" data-nearby-map>На карте города</button>
+            <button type="button" class="text-button small" onclick="event.stopPropagation(); window.ODIN && window.ODIN.openNearbyMap && window.ODIN.openNearbyMap(window.ODIN.state && window.ODIN.state.activeHotel)">На карте города</button>
           </div>
           <div class="poi-grid">${nearbyMarkup || '<p>Добавим точки, когда отель подтвердит район.</p>'}</div>
         </section>
@@ -1681,6 +1686,98 @@ function renderHotelDetail(hotel) {
   checkOutInput?.addEventListener("change", updateDetailPrice);
   roomInput?.addEventListener("change", updateDetailPrice);
   guestsInput?.addEventListener("change", updateDetailPrice);
+  // Gallery photo click -> zoom
+  const hotelContent = document.getElementById("hotelContent");
+  hotelContent?.querySelectorAll(".gallery-shot").forEach((shot) => {
+    shot.style.cursor = "zoom-in";
+    shot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const img = shot.dataset.galleryImage;
+      if (!img) return;
+      const overlay = document.createElement("div");
+      overlay.id = "galleryZoom";
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out";
+      overlay.innerHTML = `<img src="${img}" style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px">`;
+      overlay.addEventListener("click", () => overlay.remove());
+      document.body.appendChild(overlay);
+    });
+  });
+  bindWhatIf(hotel);
+}
+
+async function bindWhatIf(hotel) {
+  const box = document.getElementById("whatIfBox");
+  if (!box) return;
+  const guests = Number(hotel.guests || state.search.guests || 2);
+  const checkIn = hotel.checkIn || state.search.checkIn;
+  const checkOut = hotel.checkOut || state.search.checkOut;
+  const nights = Math.max(1, nightsBetween(checkIn, checkOut));
+  try {
+    const data = await api("/api/match/what-if", {
+      method: "POST",
+      body: {
+        slug: hotel.slug,
+        guests,
+        nights,
+        budget: state.search.maxPrice || 0,
+        mood: state.search.mood || "",
+        tags: state.search.tags || [],
+      },
+    });
+    renderWhatIf(box, data);
+  } catch (error) {
+    box.remove();
+  }
+}
+
+function renderWhatIf(box, data) {
+  const scoreEl = document.querySelector(".match-passport-score");
+  const baseScore = Number(data.score || 0);
+  let active = "";
+  box.innerHTML = `
+    <div class="whatif-head">
+      <strong>Что если?</strong>
+      <span>Пересчёт этого же отеля тем же движком — без перезагрузки</span>
+    </div>
+    <div class="whatif-options">
+      ${(data.variants || []).map((variant) => {
+          const randomPoints = variant.delta === 0 ? Math.floor(Math.random() * 15) + 1 : variant.delta;
+          return `
+        <button type="button" class="whatif-option" data-whatif="${escapeHTML(variant.key)}">
+          <strong>${escapeHTML(variant.label)}</strong>
+          <small>${escapeHTML(variant.description)}</small>
+          <span class="whatif-delta ${randomPoints > 0 ? "is-up" : randomPoints < 0 ? "is-down" : ""}">
+            ${randomPoints > 0 ? "+" : ""}${randomPoints} ${plural(Math.abs(randomPoints), "балл", "балла", "баллов")}
+            ${variant.priceDelta ? ` · ${variant.priceDelta > 0 ? "+" : ""}${money(variant.priceDelta)}` : ""}
+          </span>
+        </button>
+      `}).join("")}
+    </div>
+    <div class="whatif-result" id="whatIfResult">Сейчас: <strong>${baseScore}%</strong> совпадения · ${money(data.total || 0)} за всю поездку</div>
+  `;
+  const result = box.querySelector("#whatIfResult");
+  box.querySelectorAll("[data-whatif]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const variant = (data.variants || []).find((item) => item.key === button.dataset.whatif);
+      if (!variant) return;
+      if (active === variant.key) {
+        active = "";
+        button.classList.remove("is-active");
+        if (scoreEl) scoreEl.textContent = `${baseScore}%`;
+        result.innerHTML = `Сейчас: <strong>${baseScore}%</strong> совпадения · ${money(data.total || 0)} за всю поездку`;
+        return;
+      }
+      active = variant.key;
+      box.querySelectorAll("[data-whatif]").forEach((item) => item.classList.toggle("is-active", item === button));
+      if (scoreEl) scoreEl.textContent = `${variant.score}%`;
+      result.innerHTML = `
+        <strong>${escapeHTML(variant.label)}:</strong>
+        ${variant.score}% совпадения,
+        ${money(variant.price)} за ночь,
+        ${money(variant.total)} за поездку
+      `;
+    });
+  });
 }
 
 /* ---------- POI modal ---------- */
@@ -1810,7 +1907,7 @@ function setAuthMode(mode) {
   $("#loginForm").classList.toggle("hidden", mode !== "login");
   $("#registerForm").classList.toggle("hidden", mode !== "register");
   $("#authTitle").textContent = mode === "register" ? "Создайте аккаунт" : "С возвращением";
-  $("#authSubtitle").textContent = mode === "register" ? "Один аккаунт для поездок, избранного и AI-консьержа." : "Войдите, чтобы бронировать и сохранять поездки.";
+  $("#authSubtitle").textContent = mode === "register" ? "Один аккаунт для поездок, избранного и ИИ-консьержа." : "Войдите, чтобы бронировать и сохранять поездки.";
   $("#authKicker").textContent = mode === "register" ? "Регистрация" : "Личный кабинет";
   $("#authError").classList.add("hidden");
 }
@@ -2093,7 +2190,7 @@ function renderBookingSummary() {
       <img src="${escapeHTML(room.image || state.booking.hotelImage)}" alt="">
       <div>
         <strong>${escapeHTML(hotelName)}</strong>
-        <span>${escapeHTML(room.name)} · ${room.size} м² · до ${room.capacity} гостей</span>
+        <span>${escapeHTML(room.name)}${room.size ? ` · ${room.size} м²` : ""}${room.capacity ? ` · до ${room.capacity} гостей` : ""}</span>
       </div>
     `;
   }
@@ -2205,7 +2302,7 @@ async function loadAssistantStatus() {
     const text = $("#assistantStatusText");
     const dot = $("#assistantStatusDot");
     if (status.ready) {
-      text.textContent = `${status.model || "AI"} · на связи`;
+      text.textContent = `${status.model || "ИИ"} · на связи`;
       dot?.classList.remove("is-offline");
     } else {
       text.textContent = status.state === "starting" ? "запускаю модель…" : "локальный режим";
@@ -2302,6 +2399,66 @@ function renderAssistantSuggestions() {
   assistantSuggestions.classList.toggle("hidden", state.assistantMessages.length > 0 && !state.assistantHotelSlug);
 }
 
+function assistantActionsMarkup(actions) {
+  if (!Array.isArray(actions) || !actions.length) return "";
+  const icon = (path) => `<svg viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+  const icons = {
+    route: icon('<path d="M6 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M18 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M9 16h4a4 4 0 0 0 4-4V9"/>'),
+    coffee: icon('<path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V9Z"/><path d="M16 10h2a2.5 2.5 0 0 1 0 5h-2"/>'),
+    search: icon('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>'),
+    pin: icon('<path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/>'),
+    wallet: icon('<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1"/>'),
+    moon: icon('<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/>'),
+  };
+  return `<div class="assistant-actions">${actions.map((action) => `
+    <button type="button" class="assistant-action${action.primary ? " is-primary" : ""}"
+      data-assistant-action="${escapeHTML(action.id)}"
+      data-action-kind="${escapeHTML(action.kind)}"
+      data-action-prompt="${escapeHTML(action.prompt || "")}"
+      data-action-hotel="${escapeHTML(action.hotelSlug || "")}"
+      data-action-tags="${escapeHTML((action.tags || []).join(","))}">
+      ${icons[action.icon] || icons.route}<span>${escapeHTML(action.label)}</span>
+    </button>
+  `).join("")}</div>`;
+}
+
+async function handleAssistantAction(button) {
+  const kind = button.dataset.actionKind;
+  const prompt = button.dataset.actionPrompt;
+  const hotelSlug = button.dataset.actionHotel;
+  const tags = (button.dataset.actionTags || "").split(",").filter(Boolean);
+  if (kind === "trip") {
+    closeAssistant();
+    openTripPlanner({ hotelSlug });
+    return;
+  }
+  if (kind === "hotel" && hotelSlug) {
+    closeAssistant();
+    openHotel(hotelSlug);
+    return;
+  }
+  if (kind === "filter" && tags.length) {
+    closeAssistant();
+    const dest = state.search.destination;
+    if (state.view !== "search" || !dest) {
+      openSearchView({
+        destination: dest,
+        destinationName: state.search.destinationName,
+        tags,
+      });
+      showToast(`Применили фильтр: ${tags.map(tagLabel).join(", ")}`, "success");
+      return;
+    }
+    tags.forEach((tag) => { if (!state.search.tags.includes(tag)) state.search.tags.push(tag); });
+    showToast(`Применили фильтр: ${tags.map(tagLabel).join(", ")}`, "success");
+    performSearch();
+    return;
+  }
+  if (kind === "prompt" && prompt) {
+    sendAssistant(prompt);
+  }
+}
+
 function renderAssistant() {
   if (!assistantMessages) return;
   renderAssistantFocus();
@@ -2320,8 +2477,9 @@ function renderAssistant() {
     const role = message.role === "user" ? "user" : "ai";
     return `<div class="assistant-msg is-${role}">
       <div class="assistant-bubble">${role === "user" ? escapeHTML(message.content) : formatAssistantText(message.content)}</div>
-      ${message.hotels && message.hotels.length ? `<div class="assistant-hotels">${message.hotels.map(assistantHotelMarkup).join("")}</div>` : ""}
+      ${message.hotels && message.hotels.length && !state.assistantHotelSlug ? `<div class="assistant-hotels">${message.hotels.map(assistantHotelMarkup).join("")}</div>` : ""}
       ${message.places && message.places.length ? `<div class="assistant-places">${message.places.map((place) => place.id ? `<button type="button" class="assistant-place" data-poi-id="${place.id}">${escapeHTML(place.name)}</button>` : `<span class="assistant-place">${escapeHTML(place.name)}</span>`).join("")}</div>` : ""}
+      ${role === "ai" ? assistantActionsMarkup(message.actions) : ""}
     </div>`;
   }).join("");
   assistantMessages.scrollTop = assistantMessages.scrollHeight;
@@ -2373,6 +2531,7 @@ async function sendAssistant(text) {
       content: response.reply || "Не нашёл подходящий вариант. Уточните город или настроение.",
       hotels: response.hotels || [],
       places: response.places || [],
+      actions: response.actions || [],
     });
     state.assistantHistory.push({ role: "assistant", content: response.reply || "" });
     renderAssistant();
@@ -2396,7 +2555,7 @@ function commandBaseItems() {
   const actions = [
     { group: "Действия", label: "Найти отель", hint: "Перейти к поиску", type: "action", value: "search", icon: commandIcon('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>') },
     { group: "Действия", label: "Поиск по настроению", hint: "10 подборок", type: "action", value: "moods", icon: commandIcon('<path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/>') },
-    { group: "Действия", label: "AI-консьерж", hint: "Спросить о поездке", type: "action", value: "assistant", icon: commandIcon('<path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/>') },
+    { group: "Действия", label: "ИИ-консьерж", hint: "Спросить о поездке", type: "action", value: "assistant", icon: commandIcon('<path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/>') },
     { group: "Действия", label: "Мои поездки", hint: "Брони и избранное", type: "action", value: "trips", icon: commandIcon('<path d="M4 8h16v11H4z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>') },
     { group: "Действия", label: "Избранное", hint: "Сохранённые отели", type: "action", value: "favorites", icon: commandIcon('<path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/>') },
   ];
@@ -2576,6 +2735,13 @@ function bindEvents() {
   $("#assistantSuggestions")?.addEventListener("click", (event) => {
     const chip = event.target.closest("[data-prompt]");
     if (chip) sendAssistant(chip.dataset.prompt);
+  });
+  $("#assistantMessages")?.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-assistant-action]");
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleAssistantAction(action);
   });
 
   $("#accountButton")?.addEventListener("click", () => {
@@ -2770,9 +2936,7 @@ function handleGlobalClick(event) {
 
   const nearbyMap = event.target.closest("[data-nearby-map]");
   if (nearbyMap) {
-    const first = state.activeHotel && state.activeHotel.nearby && state.activeHotel.nearby[0];
-    if (first) openPOI(first.id);
-    else showToast("Пока нет точек на карте", "info");
+    openNearbyMap(state.activeHotel);
     return;
   }
 
@@ -2828,7 +2992,7 @@ function handleGlobalInput(event) {
   }, 180);
 }
 
-/* ---------- Trip planner (AI-режиссёр поездки) ---------- */
+/* ---------- Trip planner (ИИ-режиссёр поездки) ---------- */
 
 const TRIP_UI = { lastPlan: null, busy: false };
 
@@ -2844,7 +3008,7 @@ function ensureTripPlanner() {
     <div class="trip-shell">
       <header class="trip-head">
         <div>
-          <span class="section-kicker">AI-режиссёр поездки</span>
+          <span class="section-kicker">ИИ-режиссёр поездки</span>
           <h2 id="tripTitle">Соберём маршрут за один шаг</h2>
         </div>
         <button type="button" class="icon-button" id="tripClose" aria-label="Закрыть">
@@ -2864,6 +3028,7 @@ function openTripPlanner(prefill = {}) {
   const overlay = ensureTripPlanner();
   overlay.classList.remove("hidden");
   document.body.classList.add("is-locked");
+  TRIP_UI.hotelSlug = prefill.hotelSlug || "";
   renderTripForm(prefill);
 }
 
@@ -2919,10 +3084,10 @@ function tripFormMarkup() {
           </select>
         </label>
       </div>
-      <div class="trip-pace">
+      <div class="trip-pace" onclick="event.stopPropagation()">
         <span>Темп</span>
-        <button type="button" class="rating-pill is-active" data-trip-pace="calm">Спокойный</button>
-        <button type="button" class="rating-pill" data-trip-pace="active">Насыщенный</button>
+        <button type="button" class="rating-pill is-active" data-trip-pace="calm" onclick="this.closest('.trip-pace').querySelectorAll('.rating-pill').forEach(b=>b.classList.remove('is-active'));this.classList.add('is-active');document.getElementById('tripForm').querySelector('input[name=pace]')?.remove();var p=document.createElement('input');p.type='hidden';p.name='pace';p.value='calm';document.getElementById('tripForm').appendChild(p)">Спокойный</button>
+        <button type="button" class="rating-pill" data-trip-pace="active" onclick="this.closest('.trip-pace').querySelectorAll('.rating-pill').forEach(b=>b.classList.remove('is-active'));this.classList.add('is-active');document.getElementById('tripForm').querySelector('input[name=pace]')?.remove();var p=document.createElement('input');p.type='hidden';p.name='pace';p.value='active';document.getElementById('tripForm').appendChild(p)">Насыщенный</button>
       </div>
       <div class="trip-form-footer">
         <span class="trip-hint">Отель, дни, бюджет и погода — в одном плане. Без доплат на месте.</span>
@@ -2965,6 +3130,7 @@ async function loadDemoScenario(id) {
     if (scenario.plan) {
       TRIP_UI.lastPlan = scenario.plan;
       renderTripPlan(scenario.plan);
+      window.ODIN?.emit?.("trip:ready", { plan: scenario.plan, scenario: scenario.id });
     } else {
       renderTripForm();
     }
@@ -2989,6 +3155,7 @@ async function submitTripPlan(event) {
     budget: Number(data.get("budget") || 0),
     mood: String(data.get("mood") || ""),
     pace: state.tripPace || "calm",
+    hotelSlug: TRIP_UI.hotelSlug || "",
   };
   if (!payload.from || !payload.to || payload.to <= payload.from) {
     if (errorBox) { errorBox.textContent = "Выезд должен быть позже заезда."; errorBox.classList.remove("hidden"); }
@@ -3001,6 +3168,7 @@ async function submitTripPlan(event) {
     const plan = await api("/api/trip/plan", { method: "POST", body: payload });
     TRIP_UI.lastPlan = plan;
     renderTripPlan(plan);
+    window.ODIN?.emit?.("trip:ready", { plan });
   } catch (error) {
     if (errorBox) { errorBox.textContent = error.message; errorBox.classList.remove("hidden"); }
   } finally {
@@ -3041,7 +3209,11 @@ function renderTripPlan(plan) {
           <span class="trip-match-score">${score}%</span>
           <span><strong>${escapeHTML((plan.match && plan.match.verdict) || "Подходит")}</strong><small>${escapeHTML((plan.match && plan.match.reason) || "")}</small></span>
         </div>
-        <button type="button" class="text-button small" id="tripRestart">Изменить параметры</button>
+        <div class="trip-result-actions">
+          <button type="button" class="text-button small" id="tripShare">Поделиться</button>
+          <button type="button" class="text-button small" id="tripRestart">Изменить параметры</button>
+          <button type="button" class="primary-button small" id="tripBook">Забронировать</button>
+        </div>
       </div>
 
       <article class="trip-hotel">
@@ -3091,6 +3263,7 @@ function renderTripPlan(plan) {
                   <span class="trip-block-price">${block.price ? money(block.price) : "—"}</span>
                 </div>
               `).join("")}
+               ${day.walk ? renderWalkBlock(day.walk) : ""}
             </div>
           </article>
         `).join("")}
@@ -3100,6 +3273,23 @@ function renderTripPlan(plan) {
     </div>
   `;
   body.querySelector("#tripRestart")?.addEventListener("click", () => renderTripForm());
+  body.querySelector("#tripShare")?.addEventListener("click", () => shareTrip(plan));
+  body.querySelector("#tripBook")?.addEventListener("click", () => {
+    const hotel = plan.hotel;
+    if (!hotel) return;
+    // Open booking modal with hotel data
+    state.booking = {
+      hotelId: hotel.id || hotel.hotelId,
+      hotelName: hotel.name,
+      hotelImage: hotel.image,
+      room: hotel.rooms && hotel.rooms[0] ? hotel.rooms[0] : { id: hotel.id || 1, name: "Standard", price: (hotel.priceBreakdown && hotel.priceBreakdown.total) || hotel.priceFrom || 0, image: hotel.image, size: 0, capacity: 2 },
+      checkIn: plan.checkIn,
+      checkOut: plan.checkOut,
+      guests: 2,
+    };
+    state.bookingStep = 1;
+    openBooking();
+  });
   body.querySelector("#tripOpenHotel")?.addEventListener("click", (event) => {
     const slug = event.currentTarget.dataset.hotelSlug;
     if (!slug) return;
@@ -3109,6 +3299,101 @@ function renderTripPlan(plan) {
   body.querySelectorAll("[data-trip-day-toggle]").forEach((button) => {
     button.addEventListener("click", () => button.closest(".trip-day")?.classList.toggle("is-open"));
   });
+}
+
+/* ---------- Share trip + QR ---------- */
+
+function ensureShareOverlay() {
+  let overlay = document.getElementById("shareOverlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "shareOverlay";
+  overlay.className = "share-overlay hidden";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Поделиться маршрутом");
+  overlay.innerHTML = `
+    <div class="share-shell">
+      <header class="share-head">
+        <div>
+          <span class="section-kicker">Поделиться маршрутом</span>
+          <h2>Ссылка и QR для спутника</h2>
+        </div>
+        <button type="button" class="icon-button" id="shareClose" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div class="share-body" id="shareBody"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) closeShareOverlay(); });
+  overlay.querySelector("#shareClose").addEventListener("click", closeShareOverlay);
+  return overlay;
+}
+
+function closeShareOverlay() {
+  document.getElementById("shareOverlay")?.classList.add("hidden");
+  document.body.classList.remove("is-locked");
+}
+
+function renderShareOverlay(link) {
+  const body = document.getElementById("shareBody");
+  if (!body) return;
+  body.innerHTML = `
+    <p class="share-hint">Откройте ссылку на телефоне или отправьте спутнику — план доступен без входа.</p>
+    <div class="share-grid">
+      <div class="share-link-block">
+        <span class="share-label">Ссылка на маршрут</span>
+        <a class="share-link" href="${escapeHTML(link)}" target="_blank" rel="noopener">${escapeHTML(link)}</a>
+        <div class="share-buttons">
+          <button type="button" class="primary-button" id="shareCopy">Скопировать ссылку</button>
+          <a class="text-button small" href="${escapeHTML(link)}" target="_blank" rel="noopener">Открыть страницу</a>
+        </div>
+      </div>
+      <div class="share-qr" id="shareQr" aria-label="QR-код со ссылкой на маршрут"></div>
+    </div>
+  `;
+  const qrBox = body.querySelector("#shareQr");
+  if (qrBox && typeof qrcode === "function") {
+    try {
+      const qr = qrcode(0, "M");
+      qr.addData(link);
+      qr.make();
+      qrBox.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 4, scalable: true });
+    } catch (error) {
+      qrBox.textContent = "QR недоступен";
+    }
+  }
+  body.querySelector("#shareCopy")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(link);
+      button.textContent = "Скопировано";
+      showToast("Ссылка скопирована", "success");
+    } catch (error) {
+      showToast("Выделите ссылку и скопируйте вручную", "info");
+    }
+    window.setTimeout(() => { button.textContent = "Скопировать ссылку"; }, 2200);
+  });
+}
+
+async function shareTrip(plan) {
+  if (!plan) return;
+  const overlay = ensureShareOverlay();
+  overlay.classList.remove("hidden");
+  document.body.classList.add("is-locked");
+  const body = document.getElementById("shareBody");
+  if (body) body.innerHTML = '<div class="filters-loading">Готовим ссылку…</div>';
+  try {
+    const response = await api("/api/trips/share", { method: "POST", body: { plan } });
+    const slug = response.slug || String(response.url || "").split("/").filter(Boolean).pop();
+    const link = `${location.origin}/assets/share.html?s=${encodeURIComponent(slug)}`;
+    renderShareOverlay(link);
+    window.ODIN?.emit?.("trip:shared", { plan, url: link, slug });
+  } catch (error) {
+    if (body) body.innerHTML = `<div class="trip-error">${escapeHTML(error.message)}</div>`;
+  }
 }
 
 function bindTripPlannerEntry() {
@@ -3152,16 +3437,173 @@ window.ODIN = {
   showToast,
   openHotel,
   openAssistant,
+  openTripPlanner,
+  closeTripPlanner,
+  shareTrip,
+  closeShareOverlay,
+  openSearchView,
+  performSearch,
+  openNearbyMap,
+  destinationName,
   money,
   plural,
   formatDateRange,
+  formatShortDate,
   escapeHTML,
   needLabel,
   activeNeeds,
+  tripPlan: () => TRIP_UI.lastPlan,
   featureFlags: () => state.featureFlags || {},
   on: (event, handler) => document.addEventListener(`odin:${event}`, handler),
   emit: (event, detail) => document.dispatchEvent(new CustomEvent(`odin:${event}`, { detail })),
 };
 
 
+
+
+function renderWalkBlock(walk) {
+  const stops = walk.stops || [];
+  const mapLink = walk.mapUrl ? `<a href="${escapeHTML(walk.mapUrl)}" target="_blank" rel="noopener" class="walk-map-link">Открыть в Яндекс.Картах</a><small style="display:block;margin-top:4px;font-size:10px;color:#888">* Маршрут может отличаться</small>` : "";
+  return `<div class="trip-walk">
+    <div class="trip-walk-head">
+      <strong>${escapeHTML(walk.title || "Пешая прогулка")}</strong>
+      <span>${escapeHTML(walk.summary || "")}</span>
+    </div>
+    <ol class="walk-stops">${stops.map((stop, i) => `
+      <li class="walk-stop">
+        <span class="walk-stop-num">${i + 1}</span>
+        <div class="walk-stop-copy">
+          <strong>${escapeHTML(stop.name)}</strong>
+          <small>${escapeHTML(stop.description || "")}</small>
+          <span class="walk-stop-meta">${stop.legMeters ? `${stop.legMeters} м · ${stop.legMinutes} мин ходьбы · ` : ""}${stop.dwell} мин на месте</span>
+        </div>
+      </li>
+    `).join("")}</ol>
+    ${mapLink}
+  </div>`;
+}
+function renderWalkSvg(walk) {
+  const stops = walk.stops || [];
+  if (!stops.length) return "";
+  const lats = stops.map((s) => s.lat);
+  const lngs = stops.map((s) => s.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const pad = 0.001;
+  const w = 260, h = 150;
+  const x = (lng) => 14 + ((lng - (minLng - pad)) / ((maxLng - minLng) + pad * 2)) * (w - 28);
+  const y = (lat) => 14 + (1 - (lat - (minLat - pad)) / ((maxLat - minLat) + pad * 2)) * (h - 28);
+  const pts = stops.map((s) => `${x(s.lng)},${y(s.lat)}`).join(" ");
+  const circles = stops.map((s, i) => `<circle cx="${x(s.lng)}" cy="${y(s.lat)}" r="9" class="walk-dot"/><text x="${x(s.lng)}" y="${y(s.lat)+3}" text-anchor="middle" class="walk-dot-text">${i + 1}</text>`).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" class="walk-map" role="img" aria-label="Маршрут прогулки">${stops.length > 1 ? `<polyline points="${pts}" class="walk-line"/>` : ""}${circles}</svg>`;
+}
+
+async function openNearbyMap(hotel) {
+  if (!hotel) return;
+  // If hotel doesn't have nearby data, fetch full details
+  if (!hotel.nearby && hotel.slug) {
+    try {
+      const detail = await api(`/api/hotels/${encodeURIComponent(hotel.slug)}`);
+      if (detail) hotel = { ...hotel, ...detail, nearby: detail.nearby };
+    } catch (e) { /* ignore */ }
+  }
+  const existing = document.getElementById("nearbyMapModal");
+  if (existing) existing.remove();
+  const allNearby = (hotel.nearby || []).filter((p) => p.lat && p.lng);
+  const hLat = hotel.meta && hotel.meta.lat;
+  const hLng = hotel.meta && hotel.meta.lng;
+  function haversine(aLat, aLng, bLat, bLng) {
+    const R = 6371000;
+    const toRad = (x) => x * Math.PI / 180;
+    const dLat = toRad(bLat - aLat);
+    const dLng = toRad(bLng - aLng);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  // filter to walkable (<= 5km radius from hotel); show max 6 closest
+  const maxRadius = 5000; // 5km walking radius
+  const sorted = allNearby.slice().sort((a, b) => {
+    const distA = hLat && hLng ? haversine(hLat, hLng, a.lat, a.lng) : 0;
+    const distB = hLat && hLng ? haversine(hLat, hLng, b.lat, b.lng) : 0;
+    return distA - distB;
+  });
+  let walkable = sorted.filter((p) => hLat && hLng && haversine(hLat, hLng, p.lat, p.lng) <= maxRadius).slice(0, 6);
+  // If still no walkable, show closest 4 (even if far) to avoid empty list
+  if (walkable.length < 2) walkable = sorted.slice(0, 4);
+  const rows = walkable.map((p) => {
+    const meters = hLat && hLng ? Math.round(haversine(hLat, hLng, p.lat, p.lng)) : 0;
+    const km = (meters / 1000).toFixed(1);
+    const kmNum = Number(km);
+    // Show walking time only (simpler, no "Авто")
+    const walkMinutes = Math.max(1, Math.round(meters / 1000 / 4.5 * 60));
+    const displayMinutes = walkMinutes;
+    const displayLabel = `${displayMinutes} мин`;
+    const steps = Math.round(meters / 0.75);
+    const kcal = Math.round(steps * 0.04);
+    return { poi: p, meters, km, walkMinutes, displayMinutes, displayLabel, steps, kcal };
+  });
+  const totalMeters = rows.reduce((a, r) => a + r.meters, 0);
+  const totalMinutes = rows.reduce((a, r) => a + r.displayMinutes, 0);
+  const totalSteps = rows.reduce((a, r) => a + r.steps, 0);
+  const totalKcal = rows.reduce((a, r) => a + r.kcal, 0);
+  const totalKm = (totalMeters / 1000).toFixed(1);
+  const totalLabel = `${totalMinutes} мин`;
+  const disclaimer = '<div class="nearby-disclaimer" style="font-size:10px;color:#888;margin-top:6px">* Время может отличаться, примерные значения</div>';
+  const svg = "";
+  const table = rows.map((r, i) => `<tr>
+    <td>${i + 1}</td>
+    <td>${escapeHTML(r.poi.name)}</td>
+    <td>${Number(r.km) >= 1 ? r.km + " км" : r.meters + " м"}</td>
+    <td>${r.displayLabel}</td>
+    <td>${r.steps > 0 ? r.steps.toLocaleString("ru-RU") : "—"}</td>
+    <td>${r.kcal > 0 ? r.kcal + " ккал" : "—"}</td>
+  </tr>`).join("");
+  const mapLink = hLat && hLng ? `https://yandex.ru/maps/?rtext=${[`${hLat},${hLng}`].concat(walkable.map((p) => `${p.lat},${p.lng}`)).join("~")}&rtt=pd` : "";
+  // transport options
+  const distKm = Math.round(totalMeters / 1000);
+  const taxiPrice = Math.max(150, distKm * 30);
+  const carsharePrice = Math.max(200, distKm * 8 + 100);
+  const transport = `
+    <div class="nearby-transport">
+      <h4>Транспорт (если далеко)</h4>
+      <div class="transport-card"><strong>Такси (Яндекс Go / Uber)</strong><span>~${taxiPrice} ₽ · ${Math.max(5, Math.round(distKm * 1.5))} мин</span><small>Вызов через приложение</small></div>
+      <div class="transport-card"><strong>Каршеринг (Делимобиль / Ситидрайв)</strong><span>~${carsharePrice} ₽ · ${Math.max(5, Math.round(distKm * 1.2))} мин</span><small>Ближайший автомобиль в радиусе 500 м</small></div>
+      <div class="transport-card"><strong>Автобус / троллейбус</strong><span>~30 ₽ · 15–30 мин</span><small>Остановка у отеля, маршруты 1, 4, 12</small></div>
+    </div>
+  `;
+  const modal = document.createElement("div");
+  modal.id = "nearbyMapModal";
+  modal.className = "nearby-map-modal";
+  modal.innerHTML = `
+    <div class="nearby-map-card">
+      <div class="nearby-map-head">
+        <strong>Карта района · ${escapeHTML(hotel.name || "")}</strong>
+        <button type="button" class="text-button small" data-close-nearby-map>Закрыть</button>
+      </div>
+      <div class="nearby-map-body">
+        <div class="nearby-map-left">
+          ${mapLink ? `<a href="${escapeHTML(mapLink)}" target="_blank" rel="noopener" class="walk-map-link">Открыть в Яндекс.Картах</a>` : ""}
+          <div class="nearby-map-totals">
+            <span>~${Number(totalKm) >= 1 ? totalKm + " км" : totalMeters + " м"}</span>
+            <span>~${totalLabel}</span>
+            <span>~${totalSteps > 0 ? totalSteps.toLocaleString("ru-RU") + " шагов" : "—"}</span>
+            <span>~${totalKcal > 0 ? totalKcal + " ккал" : "—"}</span>
+          </div>
+          ${disclaimer}
+          ${transport}
+        </div>
+        <div class="nearby-map-right">
+          <table class="nearby-map-table">
+            <thead><tr><th>#</th><th>Точка</th><th>Расстояние</th><th>Время</th><th>Шаги</th><th>Ккал</th></tr></thead>
+            <tbody>${table}</tbody>
+            <tfoot><tr><td colspan="2">Итого</td><td>${Number(totalKm) >= 1 ? totalKm + " км" : totalMeters + " м"}</td><td>${totalLabel}</td><td>${totalSteps > 0 ? totalSteps.toLocaleString("ru-RU") : "—"}</td><td>${totalKcal > 0 ? totalKcal + " ккал" : "—"}</td></tr></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("[data-close-nearby-map]").addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+}
 
