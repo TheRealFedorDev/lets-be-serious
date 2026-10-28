@@ -11,3 +11,7 @@ odin-new.exe~
 opencode.jsonc
 hello.cmd
 README_START.md
+
+# local tooling
+.claude/
+.playwright-mcp/
