@@ -375,6 +375,7 @@ func (api *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		RadiusKm:    radius,
 		CheckIn:     query.Get("checkIn"),
 		CheckOut:    query.Get("checkOut"),
+		Needs:       ParseNeeds(query["needs"]),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Не удалось выполнить поиск")
@@ -397,6 +398,7 @@ func (api *API) handleMoods(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"moods": MoodsWithCounts(hotels),
 		"tags":  TagCatalog,
+		"needs": NeedCatalog(),
 	})
 }
 

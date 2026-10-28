@@ -63,6 +63,7 @@ type HotelCard struct {
 	DistanceKm       float64        `json:"distanceKm,omitempty"`
 	Capacity         int            `json:"capacity,omitempty"`
 	Amenities        []string       `json:"amenities,omitempty"`
+	Needs            []NeedCheck    `json:"needs,omitempty"`
 }
 
 type Room struct {
@@ -206,6 +207,7 @@ type SearchResult struct {
 	Mood   string       `json:"mood,omitempty"`
 	Tags   []string     `json:"tags,omitempty"`
 	Nearby bool         `json:"nearby,omitempty"`
+	Needs  NeedsEval    `json:"needsEval"`
 }
 
 type SearchParams struct {
@@ -231,6 +233,7 @@ type SearchParams struct {
 	RadiusKm    float64
 	CheckIn     string
 	CheckOut    string
+	Needs       []NeedSpec
 }
 
 type AuthPayload struct {

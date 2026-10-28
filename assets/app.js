@@ -36,6 +36,7 @@ const state = {
   featured: [],
   stats: null,
   tagCatalog: [],
+  needCatalog: [],
   homeLoaded: false,
   user: null,
   preferences: { accent: DEFAULT_ACCENT, menuTint: DEFAULT_MENU },
@@ -197,7 +198,34 @@ function defaultSearchState() {
     pool: false, soundproof: false, discount: false, week: false,
     lat: null, lng: null, radius: 30, minPrice: 0, maxPrice: 0,
     minRating: 0, sort: "",
+    needs: {}, needRadius: 10,
   };
+}
+
+/* ---------- Needs: «что важно рядом» ---------- */
+
+const NEED_PRESETS = [
+  { id: "family", label: "С детьми", radius: 10, needs: { beach: 1, park: 2, kids: 2, kitchen: 1 } },
+  { id: "nocar", label: "Без машины", radius: 7, needs: { metro: 2, services: 1, food: 1 } },
+  { id: "work", label: "Работаю в поездке", radius: 10, needs: { food: 2, coworking: 2, early: 1, laundry: 1 } },
+  { id: "beach", label: "Пляжный отдых", radius: 7, needs: { beach: 2, food: 1, pool: 1 } },
+  { id: "city", label: "Гулять по центру", radius: 15, needs: { attractions: 2, food: 1, park: 1 } },
+];
+
+function needDefByKey(key) {
+  return state.needCatalog.find((need) => need.key === key) || null;
+}
+
+function needLabel(key) {
+  const def = needDefByKey(key);
+  return def ? def.label : key;
+}
+
+function activeNeeds() {
+  return Object.entries(state.search.needs || {})
+    .filter(([, level]) => Number(level) > 0)
+    .map(([key, level]) => ({ key, level: Number(level), def: needDefByKey(key) }))
+    .filter((need) => need.def);
 }
 
 function ratingWord(rating) {
@@ -545,6 +573,7 @@ async function loadHome() {
     state.stats = home.stats || null;
     state.moods = (catalog && catalog.moods && catalog.moods.length ? catalog.moods : home.moods) || [];
     if (catalog && Array.isArray(catalog.tags)) state.tagCatalog = catalog.tags;
+    if (catalog && Array.isArray(catalog.needs)) state.needCatalog = catalog.needs;
     renderHome();
     state.homeLoaded = true;
   } catch (error) {
@@ -776,6 +805,10 @@ function buildSearchQuery() {
   }
   if (search.checkIn) params.set("checkIn", search.checkIn);
   if (search.checkOut) params.set("checkOut", search.checkOut);
+  activeNeeds().forEach(({ key, level, def }) => {
+    const minutes = def.kind === "nearby" ? (search.needRadius || 10) : 0;
+    params.append("needs", `${key}:${minutes}:${level}`);
+  });
   return params.toString();
 }
 
@@ -841,6 +874,45 @@ function distanceMarkup(minutes, label) {
   </span>`;
 }
 
+function needsMatchMarkup(hotel) {
+  const checks = hotel.needs || [];
+  if (!checks.length) return "";
+  const items = checks.map((check) => {
+    const ok = Boolean(check.ok);
+    const label = check.kind === "nearby"
+      ? `${check.label}${check.known ? ` · ${check.minutes} мин` : ""}`
+      : check.label;
+    const limit = check.kind === "nearby" && check.limit ? ` ≤ ${check.limit}` : "";
+    return `<span class="distance-item" style="color:${ok ? "#1a7f4b" : "#b42318"}">${ok ? "✓" : "✕"} ${escapeHTML(label)}${escapeHTML(limit)}</span>`;
+  }).join("");
+  return `<div class="result-distances" style="margin-top:2px">${items}</div>`;
+}
+
+function renderNeedsRejected(result) {
+  document.getElementById("needsRejected")?.remove();
+  const info = result && result.needsEval;
+  if (!info || !Number(info.rejectedCount || 0)) return;
+  const items = (info.rejected || []).map((hotel) => `
+    <div class="filter-check" style="cursor:default">
+      <span class="filter-box" style="background:transparent;border:none;width:18px">—</span>
+      <span><strong>${escapeHTML(hotel.name)}</strong> · ${escapeHTML(hotel.city || "")}</span>
+      <span class="filter-count">${escapeHTML(hotel.reason || "")}</span>
+    </div>
+  `).join("");
+  const more = info.rejectedCount > (info.rejected || []).length
+    ? `<p style="font-size:12px;color:var(--muted);margin:6px 0 0">и ещё ${info.rejectedCount - info.rejected.length}</p>`
+    : "";
+  const details = document.createElement("details");
+  details.id = "needsRejected";
+  details.className = "filter-group";
+  details.style.marginTop = "16px";
+  details.innerHTML = `
+    <summary class="filter-group-head">Скрыто ${info.rejectedCount} ${plural(info.rejectedCount, "отель", "отеля", "отелей")} из-за потребностей — показать причины</summary>
+    <div class="filter-group-body">${items}${more}</div>
+  `;
+  searchGrid.insertAdjacentElement("afterend", details);
+}
+
 function perksMarkup(meta) {
   const perks = [];
   if (meta.insured) perks.push('<span class="perk perk-insured"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></svg>Страховка</span>');
@@ -896,6 +968,7 @@ function resultCardMarkup(hotel) {
           ${distanceMarkup(meta.beachMinutes, "Пляж")}
           ${distanceMarkup(meta.servicesMinutes, "Сервисы")}
         </div>
+        ${needsMatchMarkup(hotel)}
         <div class="result-footer">
           <div class="result-price-wrap">
             ${oldPrice ? `<span class="result-old">${money(oldPrice)}</span>` : ""}
@@ -915,6 +988,7 @@ function renderSearchResults(result) {
   const hotels = result.hotels || [];
   const total = Number(result.total || 0);
   searchGrid.innerHTML = hotels.map(resultCardMarkup).join("");
+  renderNeedsRejected(result);
   searchEmpty.classList.toggle("hidden", total !== 0);
   resultsCount.textContent = total === 0 ? "Ничего не нашлось" : `${total} ${plural(total, "отель", "отеля", "отелей")}`;
   const dates = formatDateRange(state.search.checkIn, state.search.checkOut);
@@ -1002,6 +1076,31 @@ function renderFilters(result) {
     groups.push(filterGroupMarkup("moods", "Настроение", moodPills));
   }
 
+  const nearbyNeeds = state.needCatalog.filter((need) => need.kind === "nearby");
+  const hotelNeeds = state.needCatalog.filter((need) => need.kind !== "nearby");
+  if (nearbyNeeds.length || hotelNeeds.length) {
+    const chip = (need) => {
+      const level = Number(state.search.needs[need.key] || 0);
+      const must = level >= 2;
+      const active = level > 0;
+      const style = must ? ' style="background:var(--accent);border-color:var(--accent);color:#fff"' : "";
+      return `<button type="button" class="rating-pill${active ? " is-active" : ""}" data-need="${escapeHTML(need.key)}" aria-pressed="${active}" title="${escapeHTML(need.hint || need.label)}"${style}>${escapeHTML(need.label)}${must ? " ✓" : ""}</button>`;
+    };
+    const presets = NEED_PRESETS
+      .map((preset) => `<button type="button" class="rating-pill" data-need-preset="${preset.id}">${escapeHTML(preset.label)}</button>`)
+      .join("");
+    groups.push(filterGroupMarkup("needs", "Что важно рядом", `
+      <div class="filter-rating-row">${nearbyNeeds.map(chip).join("")}</div>
+      <label class="budget-slider">
+        <span>Доступность: <strong id="needRadiusValue">${state.search.needRadius} мин</strong> пешком</span>
+        <input type="range" min="3" max="30" step="1" value="${state.search.needRadius}" data-need-radius aria-label="Доступность потребностей">
+      </label>
+      <div class="filter-rating-row">${presets}</div>
+      <span style="font-size:10.5px;color:var(--muted)">Нажмите ещё раз — станет обязательным. Сейчас «желательно».</span>
+      ${hotelNeeds.length ? `<div class="filter-rating-row" style="margin-top:8px">${hotelNeeds.map(chip).join("")}</div>` : ""}
+    `));
+  }
+
   groups.push(filterGroupMarkup("special", "Особые условия", `
     ${specialCheck("insured", "Страховка проживания")}
     ${specialCheck("guides", "Услуги гидов")}
@@ -1084,6 +1183,7 @@ function renderActiveFilters() {
   if (search.destination) add(search.destinationName || destinationName(search.destination), "destination");
   if (search.mood) add(state.moods.find((mood) => mood.slug === search.mood)?.title || "Настроение", "mood");
   search.tags.forEach((slug) => add(tagLabel(slug), "tag", slug));
+  activeNeeds().forEach(({ key, level }) => add(`${needLabel(key)}${level >= 2 ? " · обязательно" : ""}`, "need", key));
   const specials = [
     ["insured", "Страховка"], ["guides", "Гиды"], ["week", "Ровно 7 ночей"],
     ["discount", "Со скидкой"], ["parking", "Парковка"], ["pool", "Бассейн"],
@@ -1138,6 +1238,28 @@ function handlePanelClick(event) {
     performSearch();
     return;
   }
+  const need = event.target.closest("[data-need]");
+  if (need) {
+    const key = need.dataset.need;
+    const current = Number(state.search.needs[key] || 0);
+    const next = current >= 2 ? 0 : current + 1;
+    if (next === 0) delete state.search.needs[key];
+    else state.search.needs[key] = next;
+    if (next === 2) showToast(`${needLabel(key)} — обязательно`, "info");
+    performSearch();
+    return;
+  }
+  const needPreset = event.target.closest("[data-need-preset]");
+  if (needPreset) {
+    const preset = NEED_PRESETS.find((item) => item.id === needPreset.dataset.needPreset);
+    if (preset) {
+      state.search.needs = { ...preset.needs };
+      state.search.needRadius = preset.radius;
+      showToast(`Набор «${preset.label}» применён`, "success");
+      performSearch();
+    }
+    return;
+  }
   const preset = event.target.closest("[data-price-preset]");
   if (preset) {
     state.search.maxPrice = Number(preset.dataset.pricePreset) || 0;
@@ -1147,6 +1269,14 @@ function handlePanelClick(event) {
 }
 
 function handlePanelInput(event) {
+  const needRadius = event.target.closest("[data-need-radius]");
+  if (needRadius) {
+    state.search.needRadius = Number(needRadius.value) || 10;
+    const label = document.getElementById("needRadiusValue");
+    if (label) label.textContent = `${state.search.needRadius} мин`;
+    if (event.type === "change") performSearch();
+    return;
+  }
   const slider = event.target.closest("[data-budget-slider]");
   if (slider) {
     const value = Number(slider.value) || 0;
@@ -1185,6 +1315,7 @@ function removeFilter(type, value) {
   else if (type === "maxPrice") search.maxPrice = 0;
   else if (type === "rating") search.minRating = 0;
   else if (type === "geo") { search.lat = null; search.lng = null; }
+  else if (type === "need") delete search.needs[value];
   if (type === "special" && value === "week") syncSearchInputs();
   performSearch();
 }
@@ -1196,6 +1327,7 @@ function resetFilters() {
     insured: false, guides: false, parking: false, pool: false,
     soundproof: false, discount: false, week: false,
     lat: null, lng: null, minPrice: 0, maxPrice: 0, minRating: 0, sort: "",
+    needs: {}, needRadius: 10,
   };
   const sort = $("#sortSelect");
   if (sort) sort.value = "";
@@ -2672,6 +2804,24 @@ async function init() {
 }
 
 init();
+
+/* ---------- Bridge for separate feature modules (trip, share, match) ---------- */
+window.ODIN = {
+  state,
+  api,
+  showToast,
+  openHotel,
+  openAssistant,
+  money,
+  plural,
+  formatDateRange,
+  escapeHTML,
+  needLabel,
+  activeNeeds,
+  featureFlags: () => state.featureFlags || {},
+  on: (event, handler) => document.addEventListener(`odin:${event}`, handler),
+  emit: (event, detail) => document.dispatchEvent(new CustomEvent(`odin:${event}`, { detail })),
+};
 
 
 

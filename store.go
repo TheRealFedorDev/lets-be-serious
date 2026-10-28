@@ -580,6 +580,12 @@ func (s *Store) Search(ctx context.Context, userID int64, params SearchParams) (
 	}
 
 	facets := buildFacets(base)
+	needsEval := NeedsEval{Rejected: make([]NeedRejection, 0, 8), Applied: len(params.Needs)}
+	for _, need := range params.Needs {
+		if need.Kind == NeedKindNearby && need.MaxMinutes > needsEval.Radius {
+			needsEval.Radius = need.MaxMinutes
+		}
+	}
 	filtered := make([]HotelCard, 0, len(base))
 	for _, hotel := range base {
 		if len(explicitTags) > 0 && !containsAllTags(hotel.Meta.TagSlugs, explicitTags) {
@@ -604,13 +610,37 @@ func (s *Store) Search(ctx context.Context, userID int64, params SearchParams) (
 		if hotel.Match == 0 && len(queryTokens) > 0 && hotelMatchesQueryTokens(hotel, queryTokens) {
 			hotel.Match = 92
 		}
+		if len(params.Needs) > 0 {
+			checks, pass, reason := EvaluateNeeds(hotel, params.Needs)
+			if !pass {
+				needsEval.RejectedCount++
+				if len(needsEval.Rejected) < 12 {
+					needsEval.Rejected = append(needsEval.Rejected, NeedRejection{
+						Slug:   hotel.Slug,
+						Name:   hotel.Name,
+						City:   hotel.City,
+						Image:  hotel.Image,
+						Reason: reason,
+					})
+				}
+				continue
+			}
+			hotel.Needs = checks
+			if score := NeedsScore(checks); score >= 0 {
+				if hotel.Match > 0 {
+					hotel.Match = clampInt(int(0.6*float64(hotel.Match)+0.4*float64(score)+0.5), 1, 99)
+				} else {
+					hotel.Match = clampInt(score, 1, 99)
+				}
+			}
+		}
 		filtered = append(filtered, hotel)
 	}
 
 	sort.SliceStable(filtered, func(i, j int) bool {
 		left, right := filtered[i], filtered[j]
 		sortMode := params.Sort
-		if sortMode == "" && (moodSlug != "" || len(inferredTags) > 0 || len(queryTokens) > 0) {
+		if sortMode == "" && (moodSlug != "" || len(inferredTags) > 0 || len(queryTokens) > 0 || len(params.Needs) > 0) {
 			sortMode = "match"
 		}
 		switch sortMode {
@@ -648,6 +678,7 @@ func (s *Store) Search(ctx context.Context, userID int64, params SearchParams) (
 		Mood:   moodSlug,
 		Tags:   explicitTags,
 		Nearby: params.Lat != 0 || params.Lng != 0,
+		Needs:  needsEval,
 	}, nil
 }
 
@@ -790,6 +821,7 @@ func scanHotelCards(rows *sql.Rows, favoriteIDs map[int64]bool) ([]HotelCard, er
 			hotel.TagSlugs = []string{}
 		}
 		hotel.Favorited = favoriteIDs != nil && favoriteIDs[hotel.ID]
+		deriveAmenities(&hotel)
 		hotel.PriceBreakdown = buildPriceBreakdown(hotel.PriceFrom, hotel.Capacity)
 		hotels = append(hotels, hotel)
 	}
@@ -836,6 +868,10 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 		detail.TagSlugs = []string{}
 	}
 	detail.Amenities = decodeStrings(amenitiesJSON)
+	deriveAmenities(&detail.HotelCard)
+	if len(detail.Amenities) == 0 {
+		detail.Amenities = detail.HotelCard.Amenities
+	}
 	detail.Gallery = decodeStrings(galleryJSON)
 	detail.CheckIn = checkIn
 	detail.CheckOut = checkOut
