@@ -79,3 +79,26 @@ $env:ODIN_OPEN_BROWSER="false"
 ```
 
 Демо-логин: `demo@odin.travel` / `odin-demo-2026`.
+
+## Хуки от напарника → N5
+
+Публичная страница маршрута: `assets/share.html?s=<slug>` (автономная, без входа, с QR и печатью в A4; slug также читается из `#slug`). Чтобы ссылка и QR вели на неё, владельцу `app.js` и `share.go` нужно:
+
+**app.js** — в `shareTrip(plan)` строить ссылку из slug, а не брать `response.url`:
+
+```js
+const response = await api("/api/trips/share", { method: "POST", body: { plan } });
+// slug есть в ответе; если нет — берём последний сегмент url (/share/{slug})
+const slug = response.slug || String(response.url || "").split("/").filter(Boolean).pop();
+const link = `${location.origin}/assets/share.html?s=${encodeURIComponent(slug)}`;
+renderShareOverlay(link);            // ссылка и QR в overlay ведут на новую страницу
+window.ODIN?.emit?.("trip:shared", { plan, url: link, slug });
+```
+
+**share.go** — по желанию: в `handleSharePage` сделать редирект на красивую страницу, а `shareURL` оставить как есть для обратной совместимости:
+
+```go
+http.Redirect(w, r, "/assets/share.html?s="+url.QueryEscape(slug), http.StatusFound)
+```
+
+Страница использует только `GET /api/share/{slug}` (`{plan, views}`), 404 показывает «Маршрут не найден».
