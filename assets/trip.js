@@ -80,6 +80,8 @@
 
   function walkMarkup(w) {
     if (!w) return "";
+    // Данные прогулки иногда приходят битыми (десятки км, сотни минут) — такую прогулку не показываем.
+    if (num(w.distanceMeters) > 15000 || num(w.totalMinutes) > 300) return "";
     var stops = (w.stops || []).length;
     return '<div class="tx-walk"><span class="tx-walk-ico" aria-hidden="true">' + ico(TYPES.walk.icon) + "</span>" +
       '<div class="tx-walk-copy"><strong>' + esc(w.title || "Пешая прогулка") + "</strong><span>" +
