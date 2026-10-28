@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -23,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -337,7 +339,16 @@ func (api *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	guests := 0
 	if value := query.Get("guests"); value != "" {
-		guests, _ = strconv.Atoi(value)
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 10 {
+			writeError(w, http.StatusBadRequest, guestsError)
+			return
+		}
+		guests = n
+	}
+	if msg := validateStay(query.Get("checkIn"), query.Get("checkOut")); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
 	}
 	maxPrice := 0
 	if value := query.Get("maxPrice"); value != "" {
@@ -396,6 +407,14 @@ func (api *API) handleTripPlan(w http.ResponseWriter, r *http.Request) {
 	var req TripRequest
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "Проверьте параметры поездки")
+		return
+	}
+	if req.Guests != 0 && (req.Guests < 1 || req.Guests > 10) {
+		writeError(w, http.StatusBadRequest, guestsError)
+		return
+	}
+	if msg := validateStay(req.From, req.To); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	key := tripCacheKey(req)
@@ -471,10 +490,21 @@ func (api *API) handleHotel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Отель не найден")
 		return
 	}
+	hq := r.URL.Query()
 	guests := 2
-	if value := r.URL.Query().Get("guests"); value != "" {
-		guests, _ = strconv.Atoi(value)
+	if value := hq.Get("guests"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 10 {
+			writeError(w, http.StatusBadRequest, guestsError)
+			return
+		}
+		guests = n
 	}
+	maxPrice := 0
+	if value := hq.Get("maxPrice"); value != "" {
+		maxPrice, _ = strconv.Atoi(value)
+	}
+	needs := ParseNeeds(hq["needs"])
 	detail, err := api.store.HotelBySlug(
 		r.Context(),
 		api.optionalUserID(r),
@@ -493,7 +523,43 @@ func (api *API) handleHotel(w http.ResponseWriter, r *http.Request) {
 	}
 	mood := strings.TrimSpace(r.URL.Query().Get("mood"))
 	tags := append([]string{}, r.URL.Query()["tags"]...)
-	breakdown := BuildMatchBreakdown(detail.HotelCard, SearchParams{Guests: guests, Mood: mood, Tags: tags}, mood, NormalizeTags(tags))
+	inferred := NormalizeTags(tags)
+	searchParams := SearchParams{Guests: guests, Mood: mood, Tags: tags, MaxPrice: maxPrice, Needs: needs}
+	// Балл считаем той же цепочкой, что Search: настроение/теги/логистика, затем смесь с потребностями.
+	card := detail.HotelCard
+	card.Needs = nil
+	finalScore := card.Match
+	if moodDef, ok := moodBySlug[mood]; ok {
+		if score := MoodScore(card.Meta.TagSlugs, moodDef); score > finalScore {
+			finalScore = score
+		}
+	}
+	if len(inferred) > 0 {
+		if score := overlapPercent(card.Meta.TagSlugs, inferred); score > finalScore {
+			finalScore = score
+		}
+	}
+	if lr := logisticRecommendation(card, searchParams, mood, inferred); lr > finalScore {
+		finalScore = lr
+	}
+	if len(needs) > 0 {
+		checks, _, _ := EvaluateNeeds(detail.HotelCard, needs)
+		detail.HotelCard.Needs = checks
+		if score := NeedsScore(checks); score >= 0 {
+			if finalScore > 0 {
+				finalScore = clampInt(int(0.6*float64(finalScore)+0.4*float64(score)+0.5), 1, 100)
+			} else {
+				finalScore = clampInt(score, 1, 100)
+			}
+		}
+	}
+	breakdown := BuildMatchBreakdown(detail.HotelCard, searchParams, mood, inferred)
+	if finalScore > 0 && finalScore != breakdown.Score && len(breakdown.Factors) > 0 {
+		delta := finalScore - breakdown.Score
+		breakdown.Factors[0].Points += delta // factors отсортированы: гасим разницу в главном вкладе
+		breakdown.Score = finalScore
+		breakdown.Verdict = tripVerdict(finalScore)
+	}
 	detail.MatchDetail = &breakdown
 	writeJSON(w, http.StatusOK, detail)
 }
@@ -511,6 +577,11 @@ func (api *API) handleWhatIf(w http.ResponseWriter, r *http.Request) {
 	result, err := api.store.WhatIf(r.Context(), api.optionalUserID(r), req)
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, "Отель не найден")
+		return
+	}
+	var inErr *WhatIfInputError
+	if errors.As(err, &inErr) {
+		writeError(w, http.StatusBadRequest, inErr.Message)
 		return
 	}
 	if err != nil {
@@ -573,7 +644,11 @@ func (api *API) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 
 	user := currentUser(r)
 	trip, err := api.store.CreateBooking(r.Context(), user.ID, input)
+	var capErr *CapacityError
 	switch {
+	case errors.As(err, &capErr):
+		writeError(w, http.StatusBadRequest, capErr.Error())
+		return
 	case errors.Is(err, ErrUnavailable):
 		writeError(w, http.StatusConflict, "Этот номер уже занят на выбранные даты")
 		return
@@ -622,6 +697,15 @@ func (api *API) handleToggleFavorite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Некорректный отель")
 		return
 	}
+	var exists int
+	if err := api.store.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM hotels WHERE id = ?`, hotelID).Scan(&exists); err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось обновить избранное")
+		return
+	}
+	if exists == 0 {
+		writeError(w, http.StatusNotFound, "Отель не найден")
+		return
+	}
 	user := currentUser(r)
 	favorited, err := api.store.ToggleFavorite(r.Context(), user.ID, hotelID)
 	if err != nil {
@@ -655,6 +739,9 @@ func (api *API) handlePreferences(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if rateLimited(w, r, authLimiter, "Слишком много попыток входа. Подождите минуту и попробуйте снова") {
+		return
+	}
 	if !sameOrigin(r) {
 		writeError(w, http.StatusForbidden, "Запрос отклонён")
 		return
@@ -708,6 +795,9 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if rateLimited(w, r, authLimiter, "Слишком много попыток входа. Подождите минуту и попробуйте снова") {
+		return
+	}
 	if !sameOrigin(r) {
 		writeError(w, http.StatusForbidden, "Запрос отклонён")
 		return
@@ -720,6 +810,7 @@ func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 	if !validEmail(email) || input.Password == "" {
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(input.Password))
 		writeError(w, http.StatusUnauthorized, "Неверный email или пароль")
 		return
 	}
@@ -727,6 +818,7 @@ func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, hash, err := api.store.UserPasswordHash(ctx, email)
 	if errors.Is(err, ErrNotFound) {
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(input.Password))
 		writeError(w, http.StatusUnauthorized, "Неверный email или пароль")
 		return
 	}
@@ -931,12 +1023,21 @@ func logMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// 'unsafe-inline' в script-src оставлен сознательно: в assets/app.js есть
+// inline-обработчики onclick (кнопка «На карте города» ~1617 и кнопки темпа
+// маршрута ~3087-3090). Для строгой политики их нужно перевести на
+// addEventListener/делегирование.
+const contentSecurityPolicy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+	"script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; " +
+	"base-uri 'self'; form-action 'self'"
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)")
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -967,3 +1068,107 @@ func openBrowser(target string) {
 		log.Printf("open browser: %v", err)
 	}
 }
+
+// ---------- rate limit ----------
+
+type ipLimiter struct {
+	mu     sync.Mutex
+	hits   map[string][]time.Time
+	limit  int
+	window time.Duration
+}
+
+func newIPLimiter(limit int, window time.Duration) *ipLimiter {
+	return &ipLimiter{hits: map[string][]time.Time{}, limit: limit, window: window}
+}
+
+// allow регистрирует попытку и возвращает false, если лимит превышен.
+func (l *ipLimiter) allow(key string) bool {
+	now := time.Now()
+	cutoff := now.Add(-l.window)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	kept := l.hits[key][:0]
+	for _, at := range l.hits[key] {
+		if at.After(cutoff) {
+			kept = append(kept, at)
+		}
+	}
+	if len(kept) >= l.limit {
+		l.hits[key] = kept
+		return false
+	}
+	l.hits[key] = append(kept, now)
+	if len(l.hits) > 10000 { // защита от разрастания карты
+		for k, v := range l.hits {
+			if len(v) == 0 || !v[len(v)-1].After(cutoff) {
+				delete(l.hits, k)
+			}
+		}
+	}
+	return true
+}
+
+// clientIP берёт адрес TCP-соединения: X-Forwarded-For подделывается клиентом.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+var (
+	authLimiter  = newIPLimiter(10, time.Minute)
+	shareLimiter = newIPLimiter(20, time.Minute)
+)
+
+func rateLimited(w http.ResponseWriter, r *http.Request, limiter *ipLimiter, message string) bool {
+	if limiter.allow(clientIP(r)) {
+		return false
+	}
+	w.Header().Set("Retry-After", "60")
+	writeError(w, http.StatusTooManyRequests, message)
+	return true
+}
+
+// Фиктивный хэш: для несуществующего email login тратит столько же времени на bcrypt.
+var dummyPasswordHash, _ = bcrypt.GenerateFromPassword([]byte("odin-dummy-password"), bcrypt.DefaultCost)
+
+// ---------- валидация дат и гостей ----------
+
+const maxStayNights = 30
+
+// validateStay проверяет даты заезда/выезда. Пустые значения допустимы (дефолты).
+func validateStay(checkIn, checkOut string) string {
+	checkIn = strings.TrimSpace(checkIn)
+	checkOut = strings.TrimSpace(checkOut)
+	var in, out time.Time
+	var err error
+	if checkIn != "" {
+		if in, err = time.Parse("2006-01-02", checkIn); err != nil {
+			return "Дата заезда должна быть в формате ГГГГ-ММ-ДД"
+		}
+		now := time.Now()
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		if in.Before(today) {
+			return "Дата заезда не может быть в прошлом"
+		}
+	}
+	if checkOut != "" {
+		if out, err = time.Parse("2006-01-02", checkOut); err != nil {
+			return "Дата выезда должна быть в формате ГГГГ-ММ-ДД"
+		}
+	}
+	if checkIn != "" && checkOut != "" {
+		if !out.After(in) {
+			return "Дата выезда должна быть позже даты заезда"
+		}
+		if out.Sub(in) > maxStayNights*24*time.Hour {
+			return "Поездка не может быть длиннее 30 ночей"
+		}
+	}
+	return ""
+}
+
+const guestsError = "Число гостей должно быть от 1 до 10"
