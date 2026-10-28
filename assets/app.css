@@ -1421,3 +1421,40 @@ input[type="date"] { min-width: 0; }
   .trip-block-price { grid-column: 2; text-align: left; color: var(--muted); }
   .trip-budget-row { grid-template-columns: 82px 1fr 78px; }
 }
+
+/* ---------- Match passport ---------- */
+.match-passport {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  background: linear-gradient(160deg, #fbfdff, var(--canvas-warm));
+}
+.match-passport-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.match-passport-head h2 { margin: 4px 0 0; font-size: 20px; }
+.match-passport-score {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--lime);
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 800;
+}
+.match-passport-verdict { margin: 6px 0 16px; color: var(--muted); font-size: 13.5px; }
+.match-factors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+.match-factor-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--ink-soft); }
+.match-factor-row strong { font-size: 12.5px; color: var(--ink); }
+.match-factor-bar { height: 7px; margin-top: 5px; border-radius: 999px; background: var(--canvas); overflow: hidden; }
+.match-factor-bar i { display: block; height: 100%; border-radius: inherit; background: var(--blue); transition: width .5s ease; }
+.match-factor.is-plus .match-factor-bar i { background: var(--success); }
+.match-factor.is-minus .match-factor-bar i { background: #e0574f; }
+.match-factor small { display: block; margin-top: 4px; font-size: 11.5px; color: var(--muted); }
+.match-passport-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+.match-passport-lists strong { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.match-passport-lists ul { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
+.match-passport-note { margin: 16px 0 0; font-size: 11.5px; color: var(--muted-light); }
+
+@media (max-width: 640px) {
+  .match-factors { grid-template-columns: 1fr; }
+  .match-passport-lists { grid-template-columns: 1fr; }
+}

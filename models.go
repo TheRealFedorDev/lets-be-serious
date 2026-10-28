@@ -96,16 +96,17 @@ type POI struct {
 
 type HotelDetail struct {
 	HotelCard
-	Description string      `json:"description"`
-	Gallery     []string    `json:"gallery"`
-	Amenities   []string    `json:"amenities"`
-	Destination Destination `json:"destination"`
-	Rooms       []Room      `json:"rooms"`
-	Nearby      []POI       `json:"nearby"`
-	Excursions  []POI       `json:"excursions"`
-	CheckIn     string      `json:"checkIn"`
-	CheckOut    string      `json:"checkOut"`
-	Guests      int         `json:"guests"`
+	Description string          `json:"description"`
+	Gallery     []string        `json:"gallery"`
+	Amenities   []string        `json:"amenities"`
+	Destination Destination     `json:"destination"`
+	Rooms       []Room          `json:"rooms"`
+	Nearby      []POI           `json:"nearby"`
+	Excursions  []POI           `json:"excursions"`
+	CheckIn     string          `json:"checkIn"`
+	CheckOut    string          `json:"checkOut"`
+	Guests      int             `json:"guests"`
+	MatchDetail *MatchBreakdown `json:"matchDetail,omitempty"`
 }
 
 type POIDetail struct {

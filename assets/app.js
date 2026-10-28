@@ -1399,6 +1399,8 @@ async function openHotel(slug) {
   if (state.search.checkIn) params.set("checkIn", state.search.checkIn);
   if (state.search.checkOut) params.set("checkOut", state.search.checkOut);
   if (state.search.guests) params.set("guests", String(state.search.guests));
+  if (state.search.mood) params.set("mood", state.search.mood);
+  state.search.tags.forEach((tag) => params.append("tags", tag));
   try {
     const hotel = await api(`/api/hotels/${encodeURIComponent(slug)}?${params.toString()}`);
     if (state.activeHotelSlug !== slug) return;
@@ -1434,6 +1436,42 @@ function pricePieMarkup(breakdown) {
   }).join("");
   const legend = items.map((item) => `<div class="pie-legend-item"><span style="background:${item.color}"></span><span>${escapeHTML(item.label)}</span><strong>${money(item.value)}</strong></div>`).join("");
   return `<div class="price-pie"><div class="price-pie-visual"><svg viewBox="0 0 120 120" class="price-pie-svg">${slices}<text x="60" y="54" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#6d7381">Итого</text><text x="60" y="70" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="800" fill="#171a22">${money(total)}</text></svg><span class="pie-caption">за 1 ночь</span></div><div class="pie-legend">${legend}</div></div>`;
+}
+
+function matchPassportMarkup(match) {
+  if (!match || !Array.isArray(match.factors) || !match.factors.length) return "";
+  const factors = match.factors.slice(0, 7);
+  const pros = (match.pros || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("");
+  const cons = (match.cons || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("");
+  return `
+    <section class="detail-section match-passport">
+      <div class="match-passport-head">
+        <div>
+          <span class="section-kicker">Почему этот отель</span>
+          <h2>Паспорт совпадения</h2>
+        </div>
+        <span class="match-passport-score">${Number(match.score || 0)}%</span>
+      </div>
+      <p class="match-passport-verdict">${escapeHTML(match.verdict || "")}</p>
+      <div class="match-factors">
+        ${factors.map((factor) => `
+          <div class="match-factor is-${escapeHTML(factor.tone || "neutral")}">
+            <div class="match-factor-row">
+              <span>${escapeHTML(factor.label)}</span>
+              <strong>${Number(factor.points || 0)}%</strong>
+            </div>
+            <div class="match-factor-bar"><i style="width:${Math.max(3, Math.min(100, Number(factor.points) || 0))}%"></i></div>
+            ${factor.note ? `<small>${escapeHTML(factor.note)}</small>` : ""}
+          </div>
+        `).join("")}
+      </div>
+      ${pros || cons ? `<div class="match-passport-lists">
+        ${pros ? `<div><strong>За</strong><ul>${pros}</ul></div>` : ""}
+        ${cons ? `<div><strong>Против</strong><ul>${cons}</ul></div>` : ""}
+      </div>` : ""}
+      <p class="match-passport-note">Вклады факторов складываются в итоговый балл. Никакой магии — только ваши параметры и данные отеля.</p>
+    </section>
+  `;
 }
 
 function renderHotelDetail(hotel) {
@@ -1540,6 +1578,8 @@ function renderHotelDetail(hotel) {
           </div>
           <div class="detail-badges">${badges.join("")}</div>
         </div>
+
+        ${matchPassportMarkup(hotel.matchDetail)}
 
         <section class="detail-section">
           <h2>Об отеле</h2>

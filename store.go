@@ -1072,50 +1072,6 @@ func (s *Store) POIDetail(ctx context.Context, userID, poiID int64) (POIDetail, 
 	return POIDetail{POI: poi, Hotels: nearby, City: city}, nil
 }
 
-func logisticRecommendation(hotel HotelCard, params SearchParams, moodSlug string, inferredTags []string) int {
-	boolFloat := func(value bool) float64 {
-		if value {
-			return 1
-		}
-		return 0
-	}
-	tagOverlap := 0
-	for _, tag := range inferredTags {
-		if containsString(hotel.Meta.TagSlugs, tag) {
-			tagOverlap++
-		}
-	}
-	features := []float64{
-		hotel.Rating / 10.0,
-		1 - float64(hotel.PriceFrom)/40000.0,
-		float64(tagOverlap) / 5.0,
-		boolFloat(moodSlug != "" && containsString(hotel.Meta.TagSlugs, moodSlug)),
-		boolFloat(hotel.Meta.Insured),
-		boolFloat(hotel.Meta.Guides),
-		boolFloat(hotel.Meta.Pool),
-		boolFloat(hotel.Meta.Parking),
-		boolFloat(hotel.Meta.Soundproof),
-	}
-	weights := []float64{2.4, 1.0, 2.8, 2.2, 0.9, 0.8, 1.0, 0.7, 0.8}
-	if params.Lat != 0 {
-		distance := hotel.DistanceKm
-		if distance <= 0 {
-			distance = 30
-		}
-		features = append(features, 1-math.Min(distance, 50)/50.0)
-		weights = append(weights, 1.3)
-	}
-	bias := -1.8
-	z := bias
-	for i := range features {
-		if i < len(weights) {
-			z += features[i] * weights[i]
-		}
-	}
-	probability := 1 / (1 + math.Exp(-z))
-	return int(probability*100 + 0.5)
-}
-
 func (s *Store) Weather(destination, date string) WeatherInfo {
 	seed := 0
 	for _, ch := range destination + date {

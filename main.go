@@ -461,6 +461,10 @@ func (api *API) handleHotel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Не удалось загрузить отель")
 		return
 	}
+	mood := strings.TrimSpace(r.URL.Query().Get("mood"))
+	tags := append([]string{}, r.URL.Query()["tags"]...)
+	breakdown := BuildMatchBreakdown(detail.HotelCard, SearchParams{Guests: guests, Mood: mood, Tags: tags}, mood, NormalizeTags(tags))
+	detail.MatchDetail = &breakdown
 	writeJSON(w, http.StatusOK, detail)
 }
 
