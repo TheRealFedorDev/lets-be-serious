@@ -176,3 +176,33 @@ func TestTripPaceChangesArrivalAndDepartureDays(t *testing.T) {
 		t.Fatalf("score must allow 100, got %d", got)
 	}
 }
+
+func TestRainyTripDaySkipsOpenAirCulture(t *testing.T) {
+	destination := Destination{Slug: "sochi", City: "Сочи"}
+	hotel := HotelCard{Name: "Тест", PriceFrom: 10000, PriceBreakdown: PriceBreakdown{Total: 10000}}
+	pois := []POI{
+		{ID: 1, Name: "Скайпарк", Category: "culture", Tags: []string{"активность", "горы"}, Minutes: 35},
+		{ID: 2, Name: "Музей", Category: "culture", Tags: []string{"музей"}, Minutes: 60},
+		{ID: 3, Name: "Спа-центр", Category: "spa", Minutes: 60},
+		{ID: 4, Name: "Кафе", Category: "food", Minutes: 60},
+	}
+	rainy := 0
+	for day := 0; day < 60; day++ {
+		from := addDays("2026-10-01", day)
+		days := buildTripDays(destination, hotel, pois, TripRequest{From: from, Guests: 2, Pace: "calm"}, 3, &Store{})
+		for _, d := range days {
+			if d.Weather.Condition != "rain" {
+				continue
+			}
+			rainy++
+			for _, b := range d.Blocks {
+				if b.Place == "Скайпарк" {
+					t.Fatalf("rainy day %s contains open-air Скайпарк", d.Date)
+				}
+			}
+		}
+	}
+	if rainy == 0 {
+		t.Fatal("no rainy days generated, test is not exercising the rainy branch")
+	}
+}

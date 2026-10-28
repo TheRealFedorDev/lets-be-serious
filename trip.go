@@ -263,7 +263,9 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 		case "food", "coffee":
 			food = append(food, poi)
 		case "culture", "spa":
-			indoor = append(indoor, poi)
+			if isIndoorPOI(poi) {
+				indoor = append(indoor, poi)
+			}
 		default:
 			sightseeing = append(sightseeing, poi)
 		}
