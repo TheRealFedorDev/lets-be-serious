@@ -371,27 +371,7 @@ h1{font-size:30px;line-height:1.15;margin:6px 0 8px;letter-spacing:-.02em}
 
 func (api *API) handleSharePage(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(r.PathValue("slug"))
-	plan, views, err := api.store.SharedPlan(r.Context(), slug)
-	if errors.Is(err, ErrNotFound) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, `<!doctype html><html lang="ru"><meta charset="utf-8"><title>Маршрут не найден</title><body style="font-family:sans-serif;padding:40px"><h1>Маршрут не найден</h1><p><a href="/">Вернуться в О!дин</a></p></body></html>`)
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Не удалось загрузить маршрут")
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	if err := sharePageTemplate.Execute(w, sharePageData{
-		Plan:       plan,
-		BudgetRows: shareBudgetRows(plan.Budget),
-		Views:      views,
-		Link:       shareURL(r, slug),
-	}); err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
-	}
+	http.Redirect(w, r, "/assets/share.html?s="+url.QueryEscape(slug), http.StatusFound)
 }
 
 func shareBlockIcon(kind string) string {

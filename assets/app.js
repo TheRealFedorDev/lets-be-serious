@@ -3387,8 +3387,10 @@ async function shareTrip(plan) {
   if (body) body.innerHTML = '<div class="filters-loading">Готовим ссылку…</div>';
   try {
     const response = await api("/api/trips/share", { method: "POST", body: { plan } });
-    renderShareOverlay(response.url);
-    window.ODIN?.emit?.("trip:shared", { plan, url: response.url });
+    const slug = response.slug || String(response.url || "").split("/").filter(Boolean).pop();
+    const link = `${location.origin}/assets/share.html?s=${encodeURIComponent(slug)}`;
+    renderShareOverlay(link);
+    window.ODIN?.emit?.("trip:shared", { plan, url: link, slug });
   } catch (error) {
     if (body) body.innerHTML = `<div class="trip-error">${escapeHTML(error.message)}</div>`;
   }

@@ -640,9 +640,9 @@ func (s *Store) Search(ctx context.Context, userID int64, params SearchParams) (
 			hotel.Needs = checks
 			if score := NeedsScore(checks); score >= 0 {
 				if hotel.Match > 0 {
-					hotel.Match = clampInt(int(0.6*float64(hotel.Match)+0.4*float64(score)+0.5), 1, 99)
+					hotel.Match = clampInt(int(0.6*float64(hotel.Match)+0.4*float64(score)+0.5), 1, 100)
 				} else {
-					hotel.Match = clampInt(score, 1, 99)
+					hotel.Match = clampInt(score, 1, 100)
 				}
 			}
 		}
@@ -678,6 +678,13 @@ func (s *Store) Search(ctx context.Context, userID int64, params SearchParams) (
 		return left.Rating > right.Rating
 	})
 
+	guests := params.Guests
+	if guests <= 0 {
+		guests = 2
+	}
+	for i := range filtered {
+		filtered[i].PriceBreakdown = buildPriceBreakdown(filtered[i].PriceFrom, guests)
+	}
 	total := len(filtered)
 	if len(filtered) > 60 {
 		filtered = filtered[:60]
