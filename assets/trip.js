@@ -443,6 +443,19 @@
       tags: []
     };
     render(host, buttons);
+    if (e.detail.scenario) loadScenarioState(S, String(e.detail.scenario));
+  }
+
+  // Демо-сценарий: mood/tags/budget берём из prefill ответа GET /api/demo/scenario/{id}.
+  // Загрузка асинхронная, рендер не ждёт; ошибки игнорируем. Заполняем только пустые поля.
+  function loadScenarioState(st, id) {
+    O.api("/api/demo/scenario/" + encodeURIComponent(id)).then(function (scenario) {
+      var p = (scenario && scenario.prefill) || {};
+      if (S !== st) return; // состояние уже сменилось другим сценарием или отчётом
+      if (!st.mood && p.mood) st.mood = String(p.mood);
+      if (!(st.tags && st.tags.length) && Array.isArray(p.tags) && p.tags.length) st.tags = p.tags.map(String);
+      if (!(st.origBudget > 0) && num(p.budget) > 0) st.origBudget = num(p.budget);
+    }).catch(function () {});
   }
 
   // Бюджет и настроение берём из формы в момент отправки, пока она ещё в DOM.

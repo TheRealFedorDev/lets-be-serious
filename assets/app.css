@@ -1770,3 +1770,23 @@ body:has(.filters.is-open) .assistant-fab { opacity: 0; pointer-events: none; tr
   .hotel-side { order: 3; position: static; margin-top: 4px; }
   .hotel-main > section { order: 4; }
 }
+
+/* 11. QA polish 2 (visual.md findings 41, 46, 47). Appended only; earlier rules untouched. */
+
+/* 41. Phones: booking step buttons stack full-width; the primary button sits on top, "Назад" / "Отмена" under it. */
+@media (max-width: 767px) {
+  .booking-actions { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .booking-actions > button { width: 100%; flex: 0 0 auto; min-width: 0; }
+}
+
+/* 46. Phones: assistant input is 16px so iOS Safari does not zoom on focus; assistant messages read at 14.5px. */
+@media (max-width: 767px) {
+  .assistant-form input,
+  .assistant-form textarea { font-size: 16px; }
+  .assistant-bubble { font-size: 14.5px; }
+}
+
+/* 47. Trip cards (My trips) reuse .trip-body / .trip-head from the trip-planner overlay, which added 26px (or 16px on phones)
+   of inner padding. Reset it inside the card so the title, status and rows share one left edge. */
+.trip-card .trip-body { padding: 18px; overflow: visible; }
+.trip-card .trip-head { padding: 0; border-bottom: 0; }

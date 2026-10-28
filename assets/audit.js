@@ -161,9 +161,9 @@
       </div>
 
       <div class="audit-final">
-        <span>Итого к оплате:</span>
+        <span>Полная стоимость проживания</span>
         <strong>${O.money(stayTotal)}</strong>
-        <small>за ${n} ${nightsWord}, ${g} ${guestsWord}</small>
+        <small>с налогами, сборами и завтраком · за ${n} ${nightsWord}, ${g} ${guestsWord}</small>
       </div>`;
   }
 
