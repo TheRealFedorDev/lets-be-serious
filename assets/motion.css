@@ -1,0 +1,69 @@
+/* ODIN motion layer: reveal, view transitions, skeletons, hover/press micro-interactions.
+   Only transform / opacity / box-shadow are animated. All disabled under prefers-reduced-motion. */
+:root {
+  --motion-ease-out: cubic-bezier(.22, .61, .36, 1);
+  --motion-reveal-dur: 360ms;
+  --motion-view-dur: 220ms;
+  --motion-reveal-shift: 12px;
+  --motion-skel-base: color-mix(in srgb, var(--line) 62%, var(--canvas-warm));
+  --motion-skel-hi: color-mix(in srgb, var(--paper) 70%, transparent);
+  --motion-lift: -3px;
+}
+
+/* 1. Scroll reveal. m-pre is added by JS only to below-the-fold elements when IO is supported. */
+.m-pre { opacity: 0; transform: translateY(var(--motion-reveal-shift)); }
+.m-in {
+  animation: motion-reveal var(--motion-reveal-dur) var(--motion-ease-out) var(--m-d, 0ms) backwards;
+}
+@keyframes motion-reveal {
+  from { opacity: 0; transform: translateY(var(--motion-reveal-shift)); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 2. View transition */
+.m-view-in { animation: motion-view var(--motion-view-dur) var(--motion-ease-out) backwards; }
+@keyframes motion-view {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 3. Skeletons (softer shimmer, reusable utilities) */
+.skeleton-card, .skeleton-line, .skeleton-block {
+  position: relative; overflow: hidden; background: var(--motion-skel-base);
+}
+.skeleton-card::after, .skeleton-line::after, .skeleton-block::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, var(--motion-skel-hi) 50%, transparent 100%);
+  transform: translateX(-100%);
+  animation: motion-shimmer 1.6s ease-in-out infinite;
+}
+.skeleton-line { display: block; height: 12px; width: 100%; border-radius: 6px; }
+.skeleton-line + .skeleton-line { margin-top: 8px; }
+.skeleton-line.is-short { width: 55%; }
+.skeleton-block { display: block; width: 100%; min-height: 80px; border-radius: var(--radius); }
+@keyframes motion-shimmer { to { transform: translateX(100%); } }
+
+/* 4. Hover lift: transform + box-shadow only, fine pointers only */
+@media (hover: hover) and (pointer: fine) {
+  .mood-card, .destination-card, .deal-card, .hotel-card {
+    transition: transform .25s var(--motion-ease-out), box-shadow .25s var(--motion-ease-out), border-color .2s;
+  }
+  .mood-card:hover, .destination-card:hover {
+    transform: translateY(var(--motion-lift)); box-shadow: var(--shadow-md);
+  }
+  .deal-card:hover { transform: translateY(-2px); }
+  .skeleton-card:hover { transform: none; box-shadow: none; }
+}
+
+/* 5. Press feedback */
+.primary-button, .rating-pill { transition: transform .12s var(--motion-ease-out), background-color .2s, border-color .2s, color .2s; }
+.primary-button:active:not(:disabled), .rating-pill:active { transform: scale(.98); }
+
+/* 6. Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .m-pre { opacity: 1 !important; transform: none !important; }
+  .m-in, .m-view-in { animation: none !important; }
+  .skeleton-card::after, .skeleton-line::after, .skeleton-block::after { animation: none !important; opacity: 0; }
+  .mood-card:hover, .destination-card:hover, .deal-card:hover { transform: none !important; }
+  .primary-button:active:not(:disabled), .rating-pill:active { transform: none !important; }
+}

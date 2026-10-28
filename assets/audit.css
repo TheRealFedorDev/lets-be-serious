@@ -1,0 +1,218 @@
+/* Карточка «Проверка цены» (assets/audit.js). Цвета и радиусы — только из :root в app.css. */
+
+.audit-card {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 14px;
+  padding: 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-xs);
+  color: var(--ink);
+  font-family: var(--font);
+  overflow-wrap: anywhere;
+}
+
+.audit-card * {
+  box-sizing: border-box;
+}
+
+.audit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+}
+
+.audit-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.audit-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.audit-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.audit-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.audit-tile {
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--canvas-warm);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.audit-cap {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.audit-val {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.audit-table-wrap {
+  margin-top: 14px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-table th,
+.audit-table td {
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.audit-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.audit-table thead th:first-child,
+.audit-table tbody th,
+.audit-table tfoot th {
+  text-align: left;
+}
+
+.audit-table thead th:first-child { width: 34%; }
+
+.audit-table tbody th {
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.audit-table tfoot th,
+.audit-table tfoot td {
+  font-weight: 800;
+  border-bottom: 0;
+  padding-top: 9px;
+}
+
+.audit-lists {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.audit-list-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.audit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.audit-mark {
+  flex: 0 0 auto;
+  width: 16px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.audit-item-yes .audit-mark { color: var(--success); }
+.audit-item-no .audit-mark { color: var(--danger); }
+.audit-item-warn .audit-mark { color: var(--warning); }
+
+.audit-final {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.audit-final > span {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.audit-final > strong {
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.audit-final > small {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 360px) {
+  .audit-card {
+    padding: 14px;
+  }
+
+  .audit-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .audit-val,
+  .audit-final > strong {
+    font-size: 17px;
+  }
+}
+
+@media (max-width: 420px) {
+  .audit-table {
+    font-size: 12px;
+  }
+}
