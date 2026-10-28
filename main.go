@@ -248,6 +248,7 @@ func routes(api *API, cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/trip/plan", api.handleTripPlan)
 	mux.HandleFunc("GET /api/demo/scenarios", api.handleDemoScenarios)
 	mux.HandleFunc("GET /api/demo/scenario/{id}", api.handleDemoScenario)
+	mux.HandleFunc("POST /api/match/what-if", api.handleWhatIf)
 	mux.HandleFunc("GET /api/moods", api.handleMoods)
 	mux.HandleFunc("GET /api/weather", api.handleWeather)
 	mux.HandleFunc("GET /api/hotels/{slug}", api.handleHotel)
@@ -468,6 +469,28 @@ func (api *API) handleHotel(w http.ResponseWriter, r *http.Request) {
 	breakdown := BuildMatchBreakdown(detail.HotelCard, SearchParams{Guests: guests, Mood: mood, Tags: tags}, mood, NormalizeTags(tags))
 	detail.MatchDetail = &breakdown
 	writeJSON(w, http.StatusOK, detail)
+}
+
+func (api *API) handleWhatIf(w http.ResponseWriter, r *http.Request) {
+	var req WhatIfRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте параметры расчёта")
+		return
+	}
+	if strings.TrimSpace(req.Slug) == "" {
+		writeError(w, http.StatusBadRequest, "Отель не найден")
+		return
+	}
+	result, err := api.store.WhatIf(r.Context(), api.optionalUserID(r), req)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusNotFound, "Отель не найден")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось пересчитать варианты")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (api *API) handlePOI(w http.ResponseWriter, r *http.Request) {

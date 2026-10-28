@@ -1438,8 +1438,9 @@ function pricePieMarkup(breakdown) {
   return `<div class="price-pie"><div class="price-pie-visual"><svg viewBox="0 0 120 120" class="price-pie-svg">${slices}<text x="60" y="54" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#6d7381">Итого</text><text x="60" y="70" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="800" fill="#171a22">${money(total)}</text></svg><span class="pie-caption">за 1 ночь</span></div><div class="pie-legend">${legend}</div></div>`;
 }
 
-function matchPassportMarkup(match) {
+function matchPassportMarkup(match, hotel) {
   if (!match || !Array.isArray(match.factors) || !match.factors.length) return "";
+  const slug = (hotel && hotel.slug) || "";
   const factors = match.factors.slice(0, 7);
   const pros = (match.pros || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("");
   const cons = (match.cons || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("");
@@ -1470,6 +1471,9 @@ function matchPassportMarkup(match) {
         ${cons ? `<div><strong>Против</strong><ul>${cons}</ul></div>` : ""}
       </div>` : ""}
       <p class="match-passport-note">Вклады факторов складываются в итоговый балл. Никакой магии — только ваши параметры и данные отеля.</p>
+      <div class="whatif" id="whatIfBox" data-whatif-slug="${escapeHTML(slug)}">
+        <div class="whatif-loading">Считаем варианты «что если»…</div>
+      </div>
     </section>
   `;
 }
@@ -1579,7 +1583,7 @@ function renderHotelDetail(hotel) {
           <div class="detail-badges">${badges.join("")}</div>
         </div>
 
-        ${matchPassportMarkup(hotel.matchDetail)}
+        ${matchPassportMarkup(hotel.matchDetail, hotel)}
 
         <section class="detail-section">
           <h2>Об отеле</h2>
@@ -1681,6 +1685,80 @@ function renderHotelDetail(hotel) {
   checkOutInput?.addEventListener("change", updateDetailPrice);
   roomInput?.addEventListener("change", updateDetailPrice);
   guestsInput?.addEventListener("change", updateDetailPrice);
+  bindWhatIf(hotel);
+}
+
+async function bindWhatIf(hotel) {
+  const box = document.getElementById("whatIfBox");
+  if (!box) return;
+  const guests = Number(hotel.guests || state.search.guests || 2);
+  const checkIn = hotel.checkIn || state.search.checkIn;
+  const checkOut = hotel.checkOut || state.search.checkOut;
+  const nights = Math.max(1, nightsBetween(checkIn, checkOut));
+  try {
+    const data = await api("/api/match/what-if", {
+      method: "POST",
+      body: {
+        slug: hotel.slug,
+        guests,
+        nights,
+        budget: state.search.maxPrice || 0,
+        mood: state.search.mood || "",
+        tags: state.search.tags || [],
+      },
+    });
+    renderWhatIf(box, data);
+  } catch (error) {
+    box.remove();
+  }
+}
+
+function renderWhatIf(box, data) {
+  const scoreEl = document.querySelector(".match-passport-score");
+  const baseScore = Number(data.score || 0);
+  let active = "";
+  box.innerHTML = `
+    <div class="whatif-head">
+      <strong>Что если?</strong>
+      <span>Пересчёт этого же отеля тем же движком — без перезагрузки</span>
+    </div>
+    <div class="whatif-options">
+      ${(data.variants || []).map((variant) => `
+        <button type="button" class="whatif-option" data-whatif="${escapeHTML(variant.key)}">
+          <strong>${escapeHTML(variant.label)}</strong>
+          <small>${escapeHTML(variant.description)}</small>
+          <span class="whatif-delta ${variant.delta > 0 ? "is-up" : variant.delta < 0 ? "is-down" : ""}">
+            ${variant.delta > 0 ? "+" : ""}${variant.delta} ${plural(Math.abs(variant.delta), "балл", "балла", "баллов")}
+            ${variant.priceDelta ? ` · ${variant.priceDelta > 0 ? "+" : ""}${money(variant.priceDelta)}` : ""}
+          </span>
+        </button>
+      `).join("")}
+    </div>
+    <div class="whatif-result" id="whatIfResult">Сейчас: <strong>${baseScore}%</strong> совпадения · ${money(data.total || 0)} за всю поездку</div>
+  `;
+  const result = box.querySelector("#whatIfResult");
+  box.querySelectorAll("[data-whatif]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const variant = (data.variants || []).find((item) => item.key === button.dataset.whatif);
+      if (!variant) return;
+      if (active === variant.key) {
+        active = "";
+        button.classList.remove("is-active");
+        if (scoreEl) scoreEl.textContent = `${baseScore}%`;
+        result.innerHTML = `Сейчас: <strong>${baseScore}%</strong> совпадения · ${money(data.total || 0)} за всю поездку`;
+        return;
+      }
+      active = variant.key;
+      box.querySelectorAll("[data-whatif]").forEach((item) => item.classList.toggle("is-active", item === button));
+      if (scoreEl) scoreEl.textContent = `${variant.score}%`;
+      result.innerHTML = `
+        <strong>${escapeHTML(variant.label)}:</strong>
+        ${variant.score}% совпадения,
+        ${money(variant.price)} за ночь,
+        ${money(variant.total)} за поездку
+      `;
+    });
+  });
 }
 
 /* ---------- POI modal ---------- */

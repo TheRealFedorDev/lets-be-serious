@@ -117,6 +117,18 @@ func hotelMatchFeatures(hotel HotelCard, params SearchParams, moodSlug string, i
 		})
 	}
 
+	if params.MaxPrice > 0 {
+		budgetValue := 1.0
+		if hotel.PriceFrom > params.MaxPrice {
+			budgetValue = clamp01(1 - float64(hotel.PriceFrom-params.MaxPrice)/float64(params.MaxPrice))
+		}
+		features = append(features, matchFeature{
+			Key: "budget", Label: "Вписывается в бюджет",
+			Note:  fmt.Sprintf("%d ₽ при лимите %d ₽", hotel.PriceFrom, params.MaxPrice),
+			Value: budgetValue, Weight: 1.8,
+		})
+	}
+
 	for _, check := range hotel.Needs {
 		value := 0.55
 		if check.Known {
