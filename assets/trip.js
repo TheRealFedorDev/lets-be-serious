@@ -206,8 +206,11 @@
       buttons.restart.className = "tx-btn";
       host.querySelector("#txSlotRestart").replaceWith(buttons.restart);
     }
-    if (buttons.book) {
+    // Кнопка app.js вела на бронь-заглушку (room.id = hotel.id → 404). Здесь она ведёт к выбору номера
+    // в карточке отеля (перехват в bind). Без slug отеля кнопку не показываем.
+    if (buttons.book && (plan.hotel || {}).slug) {
       buttons.book.className = "tx-btn tx-btn-primary";
+      buttons.book.textContent = "Выбрать номер";
       host.querySelector("#txSlotBook").replaceWith(buttons.book);
     }
     bind(host);
@@ -217,6 +220,14 @@
     if (abort) abort.abort();
     abort = typeof AbortController === "function" ? new AbortController() : null;
     var opt = abort ? { signal: abort.signal } : false;
+    // Capture на контейнере: обработчик app.js на #tripBook не срабатывает вообще.
+    host.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest("#tripBook");
+      if (!b || !host.contains(b)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      goToRoomPick();
+    }, abort ? { capture: true, signal: abort.signal } : true);
     host.addEventListener("click", function (e) {
       var t = e.target.closest("[data-tx-tab]");
       if (t) return selectTab(host, num(t.getAttribute("data-tx-tab")), false);
@@ -242,6 +253,48 @@
       e.preventDefault();
       selectTab(host, i, true);
     }, opt);
+  }
+
+  /* ---------- бронь из маршрута ---------- */
+
+  // Даты и гости плана уходят в поиск, открывается карточка отеля с ними,
+  // а выбор номера и дальнейшие шаги идут обычным путём карточки отеля.
+  function goToRoomPick() {
+    var plan = S && S.plan;
+    var slug = plan && plan.hotel && plan.hotel.slug;
+    if (!slug) return;
+    var st = O.state && O.state.search;
+    if (st) {
+      if (plan.checkIn) st.checkIn = plan.checkIn;
+      if (plan.checkOut) st.checkOut = plan.checkOut;
+      if (num(plan.guests) > 0) st.guests = num(plan.guests);
+    }
+    O.closeTripPlanner();
+    O.openHotel(slug); // синхронно очищает #hotelContent, поэтому наблюдатель ставим после
+    scrollToBooking();
+  }
+
+  // Ждём отрисовку карточки (до 3 с), плавно прокручиваем к блоку брони и фокусируем первое поле.
+  function scrollToBooking() {
+    var content = document.getElementById("hotelContent");
+    if (!content || typeof MutationObserver !== "function") return;
+    var mo = null, timer = 0, done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      if (mo) mo.disconnect();
+      clearTimeout(timer);
+      var side = content.querySelector(".hotel-side");
+      if (!side) return;
+      var reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      side.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      var first = side.querySelector("input, select, button:not([disabled])");
+      if (first) first.focus({ preventScroll: true });
+      toast("Выберите номер — даты и гости из маршрута уже подставлены", "info");
+    }
+    mo = new MutationObserver(function () { if (content.querySelector(".hotel-side")) finish(); });
+    mo.observe(content, { childList: true, subtree: true });
+    timer = setTimeout(finish, 3000);
   }
 
   function selectTab(host, i, focus) {
