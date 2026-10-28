@@ -1025,12 +1025,11 @@ func logMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// 'unsafe-inline' в script-src оставлен сознательно: в assets/app.js есть
-// inline-обработчики onclick (кнопка «На карте города» ~1617 и кнопки темпа
-// маршрута ~3087-3090). Для строгой политики их нужно перевести на
-// addEventListener/делегирование.
+// script-src без 'unsafe-inline': inline-обработчики в разметке убраны,
+// обработчики вешаются через addEventListener. style-src оставлен с
+// 'unsafe-inline', т.к. вёрстка использует inline style.
 const contentSecurityPolicy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
-	"script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; " +
+	"script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; " +
 	"base-uri 'self'; form-action 'self'"
 
 func securityHeaders(next http.Handler) http.Handler {

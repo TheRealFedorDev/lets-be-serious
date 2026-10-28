@@ -823,7 +823,7 @@ function searchHeading() {
       summary: "Лучшие отели направления — с расстояниями, страховкой и гидами.",
     };
   }
-  if (search.q) return { kicker: `Поиск: «${search.q}»`, title: "Отели по запросу", summary: "AI-поиск понимает настроение, теги и описания отелей." };
+  if (search.q) return { kicker: `Поиск: «${search.q}»`, title: "Отели по запросу", summary: "ИИ-поиск понимает настроение, теги и описания отелей." };
   if (search.tags.length) return { kicker: "Подборка", title: tagLabel(search.tags[0]), summary: "Отели, подходящие под выбранные фильтры." };
   return { kicker: "Все отели", title: "Найдите свой отель", summary: "Подбираем варианты под ваши даты и пожелания." };
 }
@@ -940,7 +940,7 @@ function resultCardMarkup(hotel) {
       <div class="result-media">
         <img src="${escapeHTML(hotel.image)}" alt="${escapeHTML(hotel.name)}" loading="lazy">
         ${favoriteButton(hotel)}
-        ${hotel.match ? `<span class="match-badge"><svg viewBox="0 0 24 24"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/></svg>${hotel.match}% match</span>` : ""}
+        ${hotel.match ? `<span class="match-badge"><svg viewBox="0 0 24 24"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/></svg>совпадение ${hotel.match}%</span>` : ""}
       </div>
       <div class="result-body">
         <div class="result-head">
@@ -1614,7 +1614,7 @@ function renderHotelDetail(hotel) {
         <section class="detail-section">
           <div class="nearby-head">
             <h2>Что рядом</h2>
-            <button type="button" class="text-button small" onclick="event.stopPropagation(); window.ODIN && window.ODIN.openNearbyMap && window.ODIN.openNearbyMap(window.ODIN.state && window.ODIN.state.activeHotel)">На карте города</button>
+            <button type="button" class="text-button small" data-nearby-map-open>На карте города</button>
           </div>
           <div class="poi-grid">${nearbyMarkup || '<p>Добавим точки, когда отель подтвердит район.</p>'}</div>
         </section>
@@ -1641,7 +1641,7 @@ function renderHotelDetail(hotel) {
           </label>
           ${roomOptions ? `<label class="form-field"><span>Номер</span><select id="detailRoom">${roomOptions}</select></label>` : ""}
           <button type="button" class="primary-button full-width" id="detailBook" ${rooms.length ? "" : "disabled"}>Забронировать</button>
-          <button type="button" class="ghost-button full-width" data-ask-hotel="${escapeHTML(hotel.slug)}" style="margin-top:8px">Спросить AI об отеле</button>
+          <button type="button" class="ghost-button full-width" data-ask-hotel="${escapeHTML(hotel.slug)}" style="margin-top:8px">Спросить ИИ об отеле</button>
           <div class="booking-perks">
             ${meta.insured ? '<span><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Проживание застраховано</span>' : ""}
             ${meta.guides ? '<span><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Поможем с гидом и экскурсией</span>' : ""}
@@ -1686,6 +1686,10 @@ function renderHotelDetail(hotel) {
   checkOutInput?.addEventListener("change", updateDetailPrice);
   roomInput?.addEventListener("change", updateDetailPrice);
   guestsInput?.addEventListener("change", updateDetailPrice);
+  document.getElementById("hotelContent")?.querySelector("[data-nearby-map-open]")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openNearbyMap(state.activeHotel);
+  });
   // Gallery photo click -> zoom
   const hotelContent = document.getElementById("hotelContent");
   hotelContent?.querySelectorAll(".gallery-shot").forEach((shot) => {
@@ -1741,13 +1745,16 @@ function renderWhatIf(box, data) {
     </div>
     <div class="whatif-options">
       ${(data.variants || []).map((variant) => {
-          const randomPoints = variant.delta === 0 ? Math.floor(Math.random() * 15) + 1 : variant.delta;
+          const points = Number(variant.delta || 0);
+          const pointsText = points === 0
+            ? "балл не меняется"
+            : `${points > 0 ? "+" : ""}${points} ${plural(Math.abs(points), "балл", "балла", "баллов")}`;
           return `
         <button type="button" class="whatif-option" data-whatif="${escapeHTML(variant.key)}">
           <strong>${escapeHTML(variant.label)}</strong>
           <small>${escapeHTML(variant.description)}</small>
-          <span class="whatif-delta ${randomPoints > 0 ? "is-up" : randomPoints < 0 ? "is-down" : ""}">
-            ${randomPoints > 0 ? "+" : ""}${randomPoints} ${plural(Math.abs(randomPoints), "балл", "балла", "баллов")}
+          <span class="whatif-delta ${points > 0 ? "is-up" : points < 0 ? "is-down" : ""}">
+            ${pointsText}
             ${variant.priceDelta ? ` · ${variant.priceDelta > 0 ? "+" : ""}${money(variant.priceDelta)}` : ""}
           </span>
         </button>
@@ -2522,7 +2529,7 @@ function renderAssistant() {
       <div class="assistant-empty">
         <span class="assistant-avatar"><svg viewBox="0 0 24 24"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/></svg></span>
         <strong>${hotel ? escapeHTML(hotel.name) : "Опишите поездку"}</strong>
-        ${hotel ? `Спросите о номерах, цене, завтраках или местах рядом — отвечу по данным отеля.` : `Настроение, город, бюджет или «тихий отель у моря» — AI подберёт варианты из каталога.`}
+        ${hotel ? `Спросите о номерах, цене, завтраках или местах рядом — отвечу по данным отеля.` : `Настроение, город, бюджет или «тихий отель у моря» — ИИ подберёт варианты из каталога.`}
       </div>`;
     return;
   }
@@ -3139,10 +3146,10 @@ function tripFormMarkup() {
           </select>
         </label>
       </div>
-      <div class="trip-pace" onclick="event.stopPropagation()">
+      <div class="trip-pace">
         <span>Темп</span>
-        <button type="button" class="rating-pill is-active" data-trip-pace="calm" onclick="this.closest('.trip-pace').querySelectorAll('.rating-pill').forEach(b=>b.classList.remove('is-active'));this.classList.add('is-active');document.getElementById('tripForm').querySelector('input[name=pace]')?.remove();var p=document.createElement('input');p.type='hidden';p.name='pace';p.value='calm';document.getElementById('tripForm').appendChild(p)">Спокойный</button>
-        <button type="button" class="rating-pill" data-trip-pace="active" onclick="this.closest('.trip-pace').querySelectorAll('.rating-pill').forEach(b=>b.classList.remove('is-active'));this.classList.add('is-active');document.getElementById('tripForm').querySelector('input[name=pace]')?.remove();var p=document.createElement('input');p.type='hidden';p.name='pace';p.value='active';document.getElementById('tripForm').appendChild(p)">Насыщенный</button>
+        <button type="button" class="rating-pill is-active" data-trip-pace="calm">Спокойный</button>
+        <button type="button" class="rating-pill" data-trip-pace="active">Насыщенный</button>
       </div>
       <div class="trip-form-footer">
         <span class="trip-hint">Отель, дни, бюджет и погода — в одном плане. Без доплат на месте.</span>
@@ -3163,6 +3170,7 @@ function renderTripForm(prefill = {}) {
   if (title) title.textContent = "Соберём маршрут за один шаг";
   body.innerHTML = tripFormMarkup();
   state.tripPace = prefill.pace || state.tripPace || "calm";
+  body.querySelector(".trip-pace")?.addEventListener("click", (event) => event.stopPropagation());
   body.querySelectorAll("[data-trip-pace]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.tripPace === state.tripPace);
     button.addEventListener("click", () => {
