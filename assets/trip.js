@@ -53,6 +53,50 @@
       '<span class="tx-hotel-go" aria-hidden="true">' + ico('<path d="M9 6l6 6-6 6"/>') + "</span></button>";
   }
 
+  function whyMarkup(plan) {
+    var h = plan.hotel || {};
+    if (!h.slug) return "";
+    return '<section class="tx-why" id="txWhy" aria-label="Почему этот отель">' +
+      '<button type="button" class="tx-why-btn" id="txWhyBtn" aria-expanded="false" aria-controls="txWhyBody">' +
+      "<span>Почему этот отель</span>" + ico('<path d="M6 9l6 6 6-6"/>') + "</button>" +
+      '<div class="tx-why-body" id="txWhyBody" hidden>' +
+      '<div class="tx-why-mount" id="txWhyMount" aria-live="polite"></div>' +
+      '<p class="tx-why-note">По параметрам карточки отеля. Балл здесь может отличаться от балла маршрута вверху.</p></div></section>';
+  }
+
+  function toggleWhy(host) {
+    var btn = host.querySelector("#txWhyBtn");
+    var body = host.querySelector("#txWhyBody");
+    var box = host.querySelector("#txWhy");
+    if (!btn || !body || !box) return;
+    var open = btn.getAttribute("aria-expanded") !== "true";
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    body.hidden = !open;
+    box.classList.toggle("is-open", open);
+    if (!open || S.whyState) return;
+    S.whyState = "loading";
+    var plan = S.plan;
+    var slug = (plan.hotel || {}).slug;
+    var q = new URLSearchParams();
+    if (plan.checkIn) q.set("checkIn", plan.checkIn);
+    if (plan.checkOut) q.set("checkOut", plan.checkOut);
+    if (plan.guests) q.set("guests", String(plan.guests));
+    var fail = function () {
+      S.whyState = "failed";
+      if (box.isConnected) box.hidden = true;
+    };
+    if (typeof O.renderMatch !== "function") return fail();
+    body.setAttribute("aria-busy", "true");
+    O.api("/api/hotels/" + encodeURIComponent(slug) + "?" + q.toString()).then(function (hotel) {
+      var mount = host.querySelector("#txWhyMount");
+      var detail = hotel && hotel.matchDetail;
+      if (!mount || !box.isConnected) return;
+      if (!detail || !O.renderMatch(mount, detail, { compact: true })) return fail();
+      body.removeAttribute("aria-busy");
+      S.whyState = "done";
+    }).catch(fail);
+  }
+
   function tabsMarkup(plan) {
     return '<div class="tx-tabs" role="tablist" aria-label="Дни поездки">' + (plan.days || []).map(function (d, i) {
       var w = d.weather || {};
@@ -137,6 +181,7 @@
       '<div class="tx-actions"><button type="button" class="tx-btn" id="txShare">' + ico('<path d="M12 15V3M8 7l4-4 4 4M5 12v7h14v-7"/>') + "Поделиться</button>" +
       '<span id="txSlotRestart"></span><span id="txSlotBook"></span></div></header>' +
       hotelMarkup(plan) +
+      whyMarkup(plan) +
       '<section class="tx-days" aria-label="План по дням">' + tabsMarkup(plan) +
       '<div class="tx-panel" id="txPanel" role="tabpanel" tabindex="0" aria-labelledby="txTab' + S.tab + '">' + panelMarkup() + "</div></section>" +
       budgetMarkup(plan) +
@@ -168,6 +213,7 @@
         if (slug) { O.closeTripPlanner(); O.openHotel(slug); }
         return;
       }
+      if (e.target.closest("#txWhyBtn")) return toggleWhy(host);
       if (e.target.closest("#txShare")) return O.shareTrip(S.plan);
       if (e.target.closest("#txRebuild")) return rebuild(host);
     }, opt);

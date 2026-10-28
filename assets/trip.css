@@ -26,6 +26,16 @@
 .tx-hotel-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; font-weight: 600; color: var(--muted); margin-top: auto; }
 .tx-hotel-go { display: grid; place-items: center; padding: 0 14px; color: var(--muted-light); }
 
+.tx-why { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+.tx-why[hidden] { display: none; }
+.tx-why-btn { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 0 16px; font-weight: 700; font-size: 14px; color: var(--ink); text-align: left; }
+.tx-why-btn svg { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s; }
+.tx-why-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.tx-why-body { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+.tx-why-body[hidden] { display: none; }
+.tx-why-body .match-card { max-width: 100%; box-shadow: none; }
+.tx-why-note { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+
 .tx-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
 .tx-tab { flex: 0 0 auto; display: grid; gap: 1px; justify-items: start; min-width: 104px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--paper); text-align: left; transition: border-color .15s, background .15s; }
 .tx-tab:hover { border-color: var(--line-strong); }
@@ -35,7 +45,7 @@
 .tx-tab.is-active { background: var(--ink); border-color: var(--ink); color: #fff; }
 .tx-tab.is-active .tx-tab-n { color: rgba(255,255,255,.7); }
 .tx-tab.is-active .tx-chip { background: rgba(255,255,255,.16); color: #fff; }
-.tx-tab:focus-visible, .tx-btn:focus-visible, .tx-hotel:focus-visible, .tx-rebuild:focus-visible, .tx-panel:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.tx-why-btn:focus-visible, .tx-tab:focus-visible, .tx-btn:focus-visible, .tx-hotel:focus-visible, .tx-rebuild:focus-visible, .tx-panel:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
 .tx-panel { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .tx-panel.is-enter { animation: tx-in .2s ease-out both; }
@@ -113,5 +123,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .tx-root, .tx-panel.is-enter, .tx-bar i, .tx-rebuild:disabled svg { animation: none; }
-  .tx-hotel, .tx-btn, .tx-tab { transition: none; }
+  .tx-hotel, .tx-btn, .tx-tab, .tx-why-btn svg { transition: none; }
 }
