@@ -1,0 +1,51 @@
+/* N9 — доступность */
+
+/* Skip-link */
+.a11y-skip {
+  position: fixed; top: 8px; left: 8px; z-index: 10000;
+  padding: 12px 18px; border-radius: 12px;
+  background: var(--ink, #171a22); color: #fff; font-weight: 800; font-size: 14px; text-decoration: none;
+  transform: translateY(-200%); transition: transform .15s ease;
+}
+.a11y-skip:focus, .a11y-skip:focus-visible { transform: none; outline: 2px solid var(--lime, #c8f86e); outline-offset: 2px; }
+
+/* Видимый фокус только для клавиатуры */
+:where(button, a[href], summary, [role="button"], [role="link"], [role="tab"], [role="switch"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent, #1f4bdb);
+  outline-offset: 2px;
+}
+:where(input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent, #1f4bdb);
+  outline-offset: 1px;
+}
+/* карточки с tabindex: скругление повторяет форму */
+.deal-card:focus-visible, .destination-card:focus-visible, .hotel-card:focus-visible, .result-card:focus-visible, .gallery-shot:focus-visible {
+  outline: 2px solid var(--accent, #1f4bdb); outline-offset: 2px;
+}
+/* на тёмных подложках — светлое кольцо поверх акцента */
+.trip-overlay :focus-visible, .share-overlay :focus-visible, .assistant-drawer :focus-visible, #galleryZoom :focus-visible {
+  outline-color: var(--accent, #1f4bdb);
+  box-shadow: 0 0 0 4px #fff;
+}
+/* мышь: без кольца (на случай браузеров без поддержки :focus-visible) */
+:where(button, a, [role="button"], [role="link"], [role="tab"], [role="switch"], [tabindex]):focus:not(:focus-visible) { outline: none; }
+.tx-panel:focus:not(:focus-visible), [tabindex="-1"]:focus { outline: none; }
+
+/* Лайтбокс: кнопка закрытия */
+.a11y-lightbox-close {
+  position: absolute; top: 16px; right: 16px; width: 44px; height: 44px; border-radius: 50%;
+  border: 0; background: #fff; color: #171a22; font-size: 28px; line-height: 1; cursor: pointer;
+}
+#galleryZoom { outline: none; }
+#galleryZoom img { max-width: 95vw; max-height: 95vh; }
+
+/* Контраст WCAG AA (4.5:1): точечные переопределения, токены :root не трогаем */
+.deal-price-row s { color: #666c7a; }                                  /* было 2.62 */
+.footer-column > span, .footer-note p { color: rgba(255,255,255,.66); } /* было 3.93 */
+.back-button, .detail-location, .rating-copy span { color: #666c7a; }   /* было 4.39 на canvas */
+.detail-stars { color: var(--warning, #a85f08); }                       /* было 1.98 */
+#tripPlanner .tx-price.is-free, #tripPlanner .tx-walk-link, #tripPlanner .tx-fit.is-ok { color: #0a6e4a; }     /* было 3.97–4.14 */
+
+@media (prefers-reduced-motion: reduce) {
+  .a11y-skip { transition: none; }
+}

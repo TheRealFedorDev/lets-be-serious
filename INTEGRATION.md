@@ -102,3 +102,44 @@ http.Redirect(w, r, "/assets/share.html?s="+url.QueryEscape(slug), http.StatusFo
 ```
 
 Страница использует только `GET /api/share/{slug}` (`{plan, views}`), 404 показывает «Маршрут не найден».
+
+## Хуки от напарника → N9 (a11y)
+
+Подключение: `<link rel="stylesheet" href="/assets/a11y.css">` и `<script src="/assets/a11y.js" defer></script>` (после остальных модулей). Модуль сам делает: skip-link, focus-trap и возврат фокуса для `#tripPlanner`, `#shareOverlay`, `#bookingModal`, `#authModal`, `#poiModal`, `#commandPalette`, мобильного меню, ассистента и лайтбокса `#galleryZoom`; Esc для мобильного меню, share (поверх планировщика закрывается только share, не оба), планировщика и лайтбокса; Enter/Space на `[role=button|link][tabindex]` (карточки, фото галереи); `aria-pressed` для `.whatif-option`, `.rating-pill`, `.segment`, `.swatch`; `aria-current` для `.nav-link`; перенос фокуса на заголовок при смене экрана и при перерисовке внутри оверлея. Модуль работает и без правок app.js; сниппеты ниже — «правильный» вариант в самом app.js (по желанию), тогда fallback в a11y.js просто не сработает.
+
+**1. Лайтбокс фото (renderHotelDetail)** — сейчас div без role, без Esc, без кнопки закрытия, без возврата фокуса:
+
+```js
+const overlay = document.createElement("div");
+overlay.id = "galleryZoom";
+overlay.setAttribute("role", "dialog");
+overlay.setAttribute("aria-modal", "true");
+overlay.setAttribute("aria-label", "Просмотр фото");
+overlay.innerHTML = `<img src="${img}" alt="${escapeHTML(hotel.name)}" style="...">
+  <button type="button" class="a11y-lightbox-close" aria-label="Закрыть фото">×</button>`;
+const close = () => { overlay.remove(); shot.focus(); };
+overlay.addEventListener("click", close);
+overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } });
+document.body.appendChild(overlay);
+overlay.querySelector("button").focus();
+```
+
+**2. Карточки `role="link" tabindex="0"`** (deal/destination/hotel/result) — нет клавиатурной активации. В делегированном обработчике кликов добавить:
+
+```js
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches('[role="link"][tabindex]')) { e.preventDefault(); e.target.click(); }
+});
+```
+
+**3. «Что если» (bindWhatIf)** — кнопки `.whatif-option` переключают только класс `is-active`. В обработчике клика:
+
+```js
+box.querySelectorAll("[data-whatif]").forEach((item) => item.setAttribute("aria-pressed", String(item === button && active === variant.key)));
+// и в ветке сброса: button.setAttribute("aria-pressed", "false");
+// плюс <div class="whatif-result" id="whatIfResult" aria-live="polite">
+```
+
+**4. closeOnEscape()** — не знает про мобильное меню и share-overlay; закрывается только то, что перечислено. Если хотите убрать зависимость от a11y.js: добавить `if (mobileMenu.classList.contains("is-open")) return closeMobileMenu();` и `if (!document.getElementById("shareOverlay")?.classList.contains("hidden")) return closeShareOverlay();` перед проверкой `tripPlanner`; и удалить дублирующий обработчик Esc в `bindTripPlannerEntry` (иначе при открытом share Esc закрывает планировщик под ним — a11y.js это перехватывает в capture-фазе).
+
+**5. Фокус после открытия экрана отеля** — в `openHotel`/`showView` после показа вида: `document.querySelector("#hotelView h1")?.setAttribute("tabindex","-1"); …focus({preventScroll:true})` (a11y.js делает то же при потере фокуса).
