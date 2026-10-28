@@ -340,6 +340,7 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 			Hotels:      toAssistantHotels(hotels),
 			Places:      places,
 			Destination: destination.City,
+			Actions:     buildAssistantActions(destination, focus, message),
 		}
 		writeJSON(w, http.StatusOK, response)
 		return
@@ -371,10 +372,11 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSON(w, http.StatusOK, AssistantResponse{
-			Reply:  reply,
-			Source: source,
-			Hotels: []AssistantHotel{},
-			Places: []POI{},
+			Reply:   reply,
+			Source:  source,
+			Hotels:  []AssistantHotel{},
+			Places:  []POI{},
+			Actions: buildAssistantActions(destination, nil, message),
 		})
 		return
 	}
@@ -433,6 +435,7 @@ func (api *API) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		Places:      places,
 		Destination: destination.City,
 		Focus:       focus,
+		Actions:     buildAssistantActions(destination, focus, message),
 	}
 	writeJSON(w, http.StatusOK, response)
 }

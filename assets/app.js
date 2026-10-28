@@ -2380,6 +2380,66 @@ function renderAssistantSuggestions() {
   assistantSuggestions.classList.toggle("hidden", state.assistantMessages.length > 0 && !state.assistantHotelSlug);
 }
 
+function assistantActionsMarkup(actions) {
+  if (!Array.isArray(actions) || !actions.length) return "";
+  const icon = (path) => `<svg viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+  const icons = {
+    route: icon('<path d="M6 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M18 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M9 16h4a4 4 0 0 0 4-4V9"/>'),
+    coffee: icon('<path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V9Z"/><path d="M16 10h2a2.5 2.5 0 0 1 0 5h-2"/>'),
+    search: icon('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>'),
+    pin: icon('<path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/>'),
+    wallet: icon('<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1"/>'),
+    moon: icon('<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/>'),
+  };
+  return `<div class="assistant-actions">${actions.map((action) => `
+    <button type="button" class="assistant-action${action.primary ? " is-primary" : ""}"
+      data-assistant-action="${escapeHTML(action.id)}"
+      data-action-kind="${escapeHTML(action.kind)}"
+      data-action-prompt="${escapeHTML(action.prompt || "")}"
+      data-action-hotel="${escapeHTML(action.hotelSlug || "")}"
+      data-action-tags="${escapeHTML((action.tags || []).join(","))}">
+      ${icons[action.icon] || icons.route}<span>${escapeHTML(action.label)}</span>
+    </button>
+  `).join("")}</div>`;
+}
+
+async function handleAssistantAction(button) {
+  const kind = button.dataset.actionKind;
+  const prompt = button.dataset.actionPrompt;
+  const hotelSlug = button.dataset.actionHotel;
+  const tags = (button.dataset.actionTags || "").split(",").filter(Boolean);
+  if (kind === "trip") {
+    closeAssistant();
+    openTripPlanner({ hotelSlug });
+    return;
+  }
+  if (kind === "hotel" && hotelSlug) {
+    closeAssistant();
+    openHotel(hotelSlug);
+    return;
+  }
+  if (kind === "filter" && tags.length) {
+    closeAssistant();
+    const dest = state.search.destination;
+    if (state.view !== "search" || !dest) {
+      openSearchView({
+        destination: dest,
+        destinationName: state.search.destinationName,
+        tags,
+      });
+      showToast(`Применили фильтр: ${tags.map(tagLabel).join(", ")}`, "success");
+      return;
+    }
+    tags.forEach((tag) => { if (!state.search.tags.includes(tag)) state.search.tags.push(tag); });
+    showToast(`Применили фильтр: ${tags.map(tagLabel).join(", ")}`, "success");
+    performSearch();
+    return;
+  }
+  if (kind === "prompt" && prompt) {
+    sendAssistant(prompt);
+  }
+}
+
 function renderAssistant() {
   if (!assistantMessages) return;
   renderAssistantFocus();
@@ -2400,6 +2460,7 @@ function renderAssistant() {
       <div class="assistant-bubble">${role === "user" ? escapeHTML(message.content) : formatAssistantText(message.content)}</div>
       ${message.hotels && message.hotels.length ? `<div class="assistant-hotels">${message.hotels.map(assistantHotelMarkup).join("")}</div>` : ""}
       ${message.places && message.places.length ? `<div class="assistant-places">${message.places.map((place) => place.id ? `<button type="button" class="assistant-place" data-poi-id="${place.id}">${escapeHTML(place.name)}</button>` : `<span class="assistant-place">${escapeHTML(place.name)}</span>`).join("")}</div>` : ""}
+      ${role === "ai" ? assistantActionsMarkup(message.actions) : ""}
     </div>`;
   }).join("");
   assistantMessages.scrollTop = assistantMessages.scrollHeight;
@@ -2451,6 +2512,7 @@ async function sendAssistant(text) {
       content: response.reply || "Не нашёл подходящий вариант. Уточните город или настроение.",
       hotels: response.hotels || [],
       places: response.places || [],
+      actions: response.actions || [],
     });
     state.assistantHistory.push({ role: "assistant", content: response.reply || "" });
     renderAssistant();
@@ -2654,6 +2716,13 @@ function bindEvents() {
   $("#assistantSuggestions")?.addEventListener("click", (event) => {
     const chip = event.target.closest("[data-prompt]");
     if (chip) sendAssistant(chip.dataset.prompt);
+  });
+  $("#assistantMessages")?.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-assistant-action]");
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleAssistantAction(action);
   });
 
   $("#accountButton")?.addEventListener("click", () => {
@@ -2942,6 +3011,7 @@ function openTripPlanner(prefill = {}) {
   const overlay = ensureTripPlanner();
   overlay.classList.remove("hidden");
   document.body.classList.add("is-locked");
+  TRIP_UI.hotelSlug = prefill.hotelSlug || "";
   renderTripForm(prefill);
 }
 
@@ -3067,6 +3137,7 @@ async function submitTripPlan(event) {
     budget: Number(data.get("budget") || 0),
     mood: String(data.get("mood") || ""),
     pace: state.tripPace || "calm",
+    hotelSlug: TRIP_UI.hotelSlug || "",
   };
   if (!payload.from || !payload.to || payload.to <= payload.from) {
     if (errorBox) { errorBox.textContent = "Выезд должен быть позже заезда."; errorBox.classList.remove("hidden"); }

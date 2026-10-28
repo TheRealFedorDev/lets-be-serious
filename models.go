@@ -192,12 +192,13 @@ type AssistantHotel struct {
 }
 
 type AssistantResponse struct {
-	Reply       string           `json:"reply"`
-	Source      string           `json:"source"`
-	Hotels      []AssistantHotel `json:"hotels"`
-	Places      []POI            `json:"places"`
-	Destination string           `json:"destination,omitempty"`
-	Focus       *AssistantHotel  `json:"focus,omitempty"`
+	Reply       string            `json:"reply"`
+	Source      string            `json:"source"`
+	Hotels      []AssistantHotel  `json:"hotels"`
+	Places      []POI             `json:"places"`
+	Destination string            `json:"destination,omitempty"`
+	Focus       *AssistantHotel   `json:"focus,omitempty"`
+	Actions     []AssistantAction `json:"actions,omitempty"`
 }
 
 type SearchResult struct {

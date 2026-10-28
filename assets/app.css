@@ -1492,3 +1492,23 @@ input[type="date"] { min-width: 0; }
 @media (max-width: 560px) {
   .whatif-options { grid-template-columns: 1fr; }
 }
+
+/* ---------- Assistant concierge actions ---------- */
+.assistant-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.assistant-action {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+.assistant-action:hover { border-color: var(--accent); background: var(--blue-soft); transform: translateY(-1px); }
+.assistant-action.is-primary { background: var(--lime); border-color: var(--lime); color: var(--ink); }
+.assistant-action.is-primary:hover { background: var(--lime-soft); border-color: var(--lime); }
+.assistant-action svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
