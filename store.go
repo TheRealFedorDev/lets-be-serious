@@ -185,7 +185,10 @@ func (s *Store) migrate() error {
 			distance TEXT NOT NULL,
 			tags_json TEXT NOT NULL,
 			price_level INTEGER NOT NULL,
-			sort_order INTEGER NOT NULL DEFAULT 0
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			lat REAL NOT NULL DEFAULT 0,
+			lng REAL NOT NULL DEFAULT 0,
+			schematic INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS seed_meta (
 			key TEXT PRIMARY KEY,
@@ -203,6 +206,15 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.ensureColumn("pois", "minutes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("pois", "lat", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("pois", "lng", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("pois", "schematic", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("hotels", "capacity_hint", "INTEGER NOT NULL DEFAULT 2"); err != nil {
@@ -931,6 +943,8 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 		detail.Nearby = detail.Nearby[:9]
 	}
 
+	detail.Walk = planWalkingRoute(detail.HotelCard, allPOIs, "calm", false, 0)
+
 	favoriteIDs, _ := s.favoriteSet(ctx, userID)
 	detail.Favorited = favoriteIDs[detail.ID]
 	return detail, nil
@@ -990,7 +1004,7 @@ func (s *Store) bookedRoomCounts(ctx context.Context, hotelID int64, checkIn, ch
 
 func (s *Store) poisForDestination(ctx context.Context, destinationSlug, category string, limit int) ([]POI, error) {
 	args := []any{destinationSlug}
-	query := `SELECT id, name, category, description, address, distance, minutes, tags_json, price_level
+	query := `SELECT id, name, category, description, address, distance, minutes, tags_json, price_level, lat, lng, schematic
 	          FROM pois WHERE destination_slug = ?`
 	if category != "" {
 		query += ` AND category = ?`
@@ -1009,14 +1023,17 @@ func (s *Store) poisForDestination(ctx context.Context, destinationSlug, categor
 	for rows.Next() {
 		var poi POI
 		var tagsJSON string
+		var schematic int
 		if err := rows.Scan(
 			&poi.ID, &poi.Name, &poi.Category, &poi.Description,
 			&poi.Address, &poi.Distance, &poi.Minutes, &tagsJSON, &poi.PriceLevel,
+			&poi.Lat, &poi.Lng, &schematic,
 		); err != nil {
 			return nil, err
 		}
 		poi.Tags = decodeStrings(tagsJSON)
 		poi.DestinationSlug = destinationSlug
+		poi.Schematic = schematic == 1
 		pois = append(pois, poi)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1028,12 +1045,14 @@ func (s *Store) poisForDestination(ctx context.Context, destinationSlug, categor
 func (s *Store) POIDetail(ctx context.Context, userID, poiID int64) (POIDetail, error) {
 	var poi POI
 	var tagsJSON string
+	var schematicVar int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, destination_slug, name, category, description, address, distance, minutes, tags_json, price_level
+		`SELECT id, destination_slug, name, category, description, address, distance, minutes, tags_json, price_level, lat, lng, schematic
 		 FROM pois WHERE id = ?`, poiID,
 	).Scan(
 		&poi.ID, &poi.DestinationSlug, &poi.Name, &poi.Category, &poi.Description,
 		&poi.Address, &poi.Distance, &poi.Minutes, &tagsJSON, &poi.PriceLevel,
+		&poi.Lat, &poi.Lng, &schematicVar,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return POIDetail{}, ErrNotFound
@@ -1042,6 +1061,7 @@ func (s *Store) POIDetail(ctx context.Context, userID, poiID int64) (POIDetail, 
 		return POIDetail{}, err
 	}
 	poi.Tags = decodeStrings(tagsJSON)
+	poi.Schematic = schematicVar == 1
 
 	favoriteIDs, _ := s.favoriteSet(ctx, userID)
 	hotels, err := s.allHotelCards(ctx, favoriteIDs)

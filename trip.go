@@ -37,11 +37,12 @@ type TripBlock struct {
 }
 
 type TripDay struct {
-	Date    string      `json:"date"`
-	Title   string      `json:"title"`
-	Weather WeatherInfo `json:"weather"`
-	Blocks  []TripBlock `json:"blocks"`
-	Total   int         `json:"total"`
+	Date    string        `json:"date"`
+	Title   string        `json:"title"`
+	Weather WeatherInfo   `json:"weather"`
+	Blocks  []TripBlock   `json:"blocks"`
+	Total   int           `json:"total"`
+	Walk    *WalkingRoute `json:"walk,omitempty"`
 }
 
 type TripBudget struct {
@@ -312,6 +313,7 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 			})
 		}
 
+		day.Walk = planWalkingRoute(hotel, pois, req.Pace, rainy, index)
 		for _, block := range day.Blocks {
 			day.Total += block.Price
 		}

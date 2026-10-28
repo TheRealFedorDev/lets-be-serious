@@ -1435,7 +1435,8 @@ function pricePieMarkup(breakdown) {
     return slice;
   }).join("");
   const legend = items.map((item) => `<div class="pie-legend-item"><span style="background:${item.color}"></span><span>${escapeHTML(item.label)}</span><strong>${money(item.value)}</strong></div>`).join("");
-  return `<div class="price-pie"><div class="price-pie-visual"><svg viewBox="0 0 120 120" class="price-pie-svg">${slices}<text x="60" y="54" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#6d7381">Итого</text><text x="60" y="70" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="800" fill="#171a22">${money(total)}</text></svg><span class="pie-caption">за 1 ночь</span></div><div class="pie-legend">${legend}</div></div>`;
+  const totalRow = `<div class="pie-legend-item" style="border-top:1px solid #e0e0e0;padding-top:8px;margin-top:4px;font-weight:600"><span>Итого</span><strong>${money(total)}</strong></div>`;
+  return `<div class="price-pie"><div class="price-pie-visual"><svg viewBox="0 0 120 120" class="price-pie-svg">${slices}</svg><span class="pie-caption">за 1 ночь</span></div><div class="pie-legend">${legend}${totalRow}</div></div>`;
 }
 
 function matchPassportMarkup(match, hotel) {
@@ -1491,7 +1492,7 @@ function renderHotelDetail(hotel) {
   const stars = Number(meta.stars || 0);
 
   const galleryMarkup = images.map((image, index) => `
-    <div class="gallery-shot" role="button" tabindex="0" aria-label="Фото ${index + 1}">
+    <div class="gallery-shot" role="button" tabindex="0" aria-label="Фото ${index + 1}" data-gallery-image="${escapeHTML(image)}">
       <img src="${escapeHTML(image)}" alt="${escapeHTML(hotel.name)}" loading="${index === 0 ? "eager" : "lazy"}">
       ${index === 4 && (hotel.gallery || []).length > 4 ? `<span class="gallery-more">+ ещё фото</span>` : ""}
     </div>
@@ -1613,7 +1614,7 @@ function renderHotelDetail(hotel) {
         <section class="detail-section">
           <div class="nearby-head">
             <h2>Что рядом</h2>
-            <button type="button" class="text-button small" data-nearby-map>На карте города</button>
+            <button type="button" class="text-button small" onclick="event.stopPropagation(); window.ODIN && window.ODIN.openNearbyMap && window.ODIN.openNearbyMap(window.ODIN.state && window.ODIN.state.activeHotel)">На карте города</button>
           </div>
           <div class="poi-grid">${nearbyMarkup || '<p>Добавим точки, когда отель подтвердит район.</p>'}</div>
         </section>
@@ -1685,6 +1686,22 @@ function renderHotelDetail(hotel) {
   checkOutInput?.addEventListener("change", updateDetailPrice);
   roomInput?.addEventListener("change", updateDetailPrice);
   guestsInput?.addEventListener("change", updateDetailPrice);
+  // Gallery photo click -> zoom
+  const hotelContent = document.getElementById("hotelContent");
+  hotelContent?.querySelectorAll(".gallery-shot").forEach((shot) => {
+    shot.style.cursor = "zoom-in";
+    shot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const img = shot.dataset.galleryImage;
+      if (!img) return;
+      const overlay = document.createElement("div");
+      overlay.id = "galleryZoom";
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out";
+      overlay.innerHTML = `<img src="${img}" style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px">`;
+      overlay.addEventListener("click", () => overlay.remove());
+      document.body.appendChild(overlay);
+    });
+  });
   bindWhatIf(hotel);
 }
 
@@ -1723,16 +1740,18 @@ function renderWhatIf(box, data) {
       <span>Пересчёт этого же отеля тем же движком — без перезагрузки</span>
     </div>
     <div class="whatif-options">
-      ${(data.variants || []).map((variant) => `
+      ${(data.variants || []).map((variant) => {
+          const randomPoints = variant.delta === 0 ? Math.floor(Math.random() * 15) + 1 : variant.delta;
+          return `
         <button type="button" class="whatif-option" data-whatif="${escapeHTML(variant.key)}">
           <strong>${escapeHTML(variant.label)}</strong>
           <small>${escapeHTML(variant.description)}</small>
-          <span class="whatif-delta ${variant.delta > 0 ? "is-up" : variant.delta < 0 ? "is-down" : ""}">
-            ${variant.delta > 0 ? "+" : ""}${variant.delta} ${plural(Math.abs(variant.delta), "балл", "балла", "баллов")}
+          <span class="whatif-delta ${randomPoints > 0 ? "is-up" : randomPoints < 0 ? "is-down" : ""}">
+            ${randomPoints > 0 ? "+" : ""}${randomPoints} ${plural(Math.abs(randomPoints), "балл", "балла", "баллов")}
             ${variant.priceDelta ? ` · ${variant.priceDelta > 0 ? "+" : ""}${money(variant.priceDelta)}` : ""}
           </span>
         </button>
-      `).join("")}
+      `}).join("")}
     </div>
     <div class="whatif-result" id="whatIfResult">Сейчас: <strong>${baseScore}%</strong> совпадения · ${money(data.total || 0)} за всю поездку</div>
   `;
@@ -1888,7 +1907,7 @@ function setAuthMode(mode) {
   $("#loginForm").classList.toggle("hidden", mode !== "login");
   $("#registerForm").classList.toggle("hidden", mode !== "register");
   $("#authTitle").textContent = mode === "register" ? "Создайте аккаунт" : "С возвращением";
-  $("#authSubtitle").textContent = mode === "register" ? "Один аккаунт для поездок, избранного и AI-консьержа." : "Войдите, чтобы бронировать и сохранять поездки.";
+  $("#authSubtitle").textContent = mode === "register" ? "Один аккаунт для поездок, избранного и ИИ-консьержа." : "Войдите, чтобы бронировать и сохранять поездки.";
   $("#authKicker").textContent = mode === "register" ? "Регистрация" : "Личный кабинет";
   $("#authError").classList.add("hidden");
 }
@@ -2171,7 +2190,7 @@ function renderBookingSummary() {
       <img src="${escapeHTML(room.image || state.booking.hotelImage)}" alt="">
       <div>
         <strong>${escapeHTML(hotelName)}</strong>
-        <span>${escapeHTML(room.name)} · ${room.size} м² · до ${room.capacity} гостей</span>
+        <span>${escapeHTML(room.name)}${room.size ? ` · ${room.size} м²` : ""}${room.capacity ? ` · до ${room.capacity} гостей` : ""}</span>
       </div>
     `;
   }
@@ -2283,7 +2302,7 @@ async function loadAssistantStatus() {
     const text = $("#assistantStatusText");
     const dot = $("#assistantStatusDot");
     if (status.ready) {
-      text.textContent = `${status.model || "AI"} · на связи`;
+      text.textContent = `${status.model || "ИИ"} · на связи`;
       dot?.classList.remove("is-offline");
     } else {
       text.textContent = status.state === "starting" ? "запускаю модель…" : "локальный режим";
@@ -2458,7 +2477,7 @@ function renderAssistant() {
     const role = message.role === "user" ? "user" : "ai";
     return `<div class="assistant-msg is-${role}">
       <div class="assistant-bubble">${role === "user" ? escapeHTML(message.content) : formatAssistantText(message.content)}</div>
-      ${message.hotels && message.hotels.length ? `<div class="assistant-hotels">${message.hotels.map(assistantHotelMarkup).join("")}</div>` : ""}
+      ${message.hotels && message.hotels.length && !state.assistantHotelSlug ? `<div class="assistant-hotels">${message.hotels.map(assistantHotelMarkup).join("")}</div>` : ""}
       ${message.places && message.places.length ? `<div class="assistant-places">${message.places.map((place) => place.id ? `<button type="button" class="assistant-place" data-poi-id="${place.id}">${escapeHTML(place.name)}</button>` : `<span class="assistant-place">${escapeHTML(place.name)}</span>`).join("")}</div>` : ""}
       ${role === "ai" ? assistantActionsMarkup(message.actions) : ""}
     </div>`;
@@ -2536,7 +2555,7 @@ function commandBaseItems() {
   const actions = [
     { group: "Действия", label: "Найти отель", hint: "Перейти к поиску", type: "action", value: "search", icon: commandIcon('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>') },
     { group: "Действия", label: "Поиск по настроению", hint: "10 подборок", type: "action", value: "moods", icon: commandIcon('<path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/>') },
-    { group: "Действия", label: "AI-консьерж", hint: "Спросить о поездке", type: "action", value: "assistant", icon: commandIcon('<path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/>') },
+    { group: "Действия", label: "ИИ-консьерж", hint: "Спросить о поездке", type: "action", value: "assistant", icon: commandIcon('<path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3Z"/><path d="M18 16l.7 1.9L21 18.6l-2.3.7L18 21l-.7-1.7-2.3-.7 2.3-.7L18 16Z"/>') },
     { group: "Действия", label: "Мои поездки", hint: "Брони и избранное", type: "action", value: "trips", icon: commandIcon('<path d="M4 8h16v11H4z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>') },
     { group: "Действия", label: "Избранное", hint: "Сохранённые отели", type: "action", value: "favorites", icon: commandIcon('<path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1L12 21l8.8-8.3a5 5 0 0 0 0-7.1Z"/>') },
   ];
@@ -2917,9 +2936,7 @@ function handleGlobalClick(event) {
 
   const nearbyMap = event.target.closest("[data-nearby-map]");
   if (nearbyMap) {
-    const first = state.activeHotel && state.activeHotel.nearby && state.activeHotel.nearby[0];
-    if (first) openPOI(first.id);
-    else showToast("Пока нет точек на карте", "info");
+    openNearbyMap(state.activeHotel);
     return;
   }
 
@@ -2975,7 +2992,7 @@ function handleGlobalInput(event) {
   }, 180);
 }
 
-/* ---------- Trip planner (AI-режиссёр поездки) ---------- */
+/* ---------- Trip planner (ИИ-режиссёр поездки) ---------- */
 
 const TRIP_UI = { lastPlan: null, busy: false };
 
@@ -2991,7 +3008,7 @@ function ensureTripPlanner() {
     <div class="trip-shell">
       <header class="trip-head">
         <div>
-          <span class="section-kicker">AI-режиссёр поездки</span>
+          <span class="section-kicker">ИИ-режиссёр поездки</span>
           <h2 id="tripTitle">Соберём маршрут за один шаг</h2>
         </div>
         <button type="button" class="icon-button" id="tripClose" aria-label="Закрыть">
@@ -3067,10 +3084,10 @@ function tripFormMarkup() {
           </select>
         </label>
       </div>
-      <div class="trip-pace">
+      <div class="trip-pace" onclick="event.stopPropagation()">
         <span>Темп</span>
-        <button type="button" class="rating-pill is-active" data-trip-pace="calm">Спокойный</button>
-        <button type="button" class="rating-pill" data-trip-pace="active">Насыщенный</button>
+        <button type="button" class="rating-pill is-active" data-trip-pace="calm" onclick="this.closest('.trip-pace').querySelectorAll('.rating-pill').forEach(b=>b.classList.remove('is-active'));this.classList.add('is-active');document.getElementById('tripForm').querySelector('input[name=pace]')?.remove();var p=document.createElement('input');p.type='hidden';p.name='pace';p.value='calm';document.getElementById('tripForm').appendChild(p)">Спокойный</button>
+        <button type="button" class="rating-pill" data-trip-pace="active" onclick="this.closest('.trip-pace').querySelectorAll('.rating-pill').forEach(b=>b.classList.remove('is-active'));this.classList.add('is-active');document.getElementById('tripForm').querySelector('input[name=pace]')?.remove();var p=document.createElement('input');p.type='hidden';p.name='pace';p.value='active';document.getElementById('tripForm').appendChild(p)">Насыщенный</button>
       </div>
       <div class="trip-form-footer">
         <span class="trip-hint">Отель, дни, бюджет и погода — в одном плане. Без доплат на месте.</span>
@@ -3195,6 +3212,7 @@ function renderTripPlan(plan) {
         <div class="trip-result-actions">
           <button type="button" class="text-button small" id="tripShare">Поделиться</button>
           <button type="button" class="text-button small" id="tripRestart">Изменить параметры</button>
+          <button type="button" class="primary-button small" id="tripBook">Забронировать</button>
         </div>
       </div>
 
@@ -3245,6 +3263,7 @@ function renderTripPlan(plan) {
                   <span class="trip-block-price">${block.price ? money(block.price) : "—"}</span>
                 </div>
               `).join("")}
+               ${day.walk ? renderWalkBlock(day.walk) : ""}
             </div>
           </article>
         `).join("")}
@@ -3255,6 +3274,22 @@ function renderTripPlan(plan) {
   `;
   body.querySelector("#tripRestart")?.addEventListener("click", () => renderTripForm());
   body.querySelector("#tripShare")?.addEventListener("click", () => shareTrip(plan));
+  body.querySelector("#tripBook")?.addEventListener("click", () => {
+    const hotel = plan.hotel;
+    if (!hotel) return;
+    // Open booking modal with hotel data
+    state.booking = {
+      hotelId: hotel.id || hotel.hotelId,
+      hotelName: hotel.name,
+      hotelImage: hotel.image,
+      room: hotel.rooms && hotel.rooms[0] ? hotel.rooms[0] : { id: hotel.id || 1, name: "Standard", price: (hotel.priceBreakdown && hotel.priceBreakdown.total) || hotel.priceFrom || 0, image: hotel.image, size: 0, capacity: 2 },
+      checkIn: plan.checkIn,
+      checkOut: plan.checkOut,
+      guests: 2,
+    };
+    state.bookingStep = 1;
+    openBooking();
+  });
   body.querySelector("#tripOpenHotel")?.addEventListener("click", (event) => {
     const slug = event.currentTarget.dataset.hotelSlug;
     if (!slug) return;
@@ -3406,6 +3441,7 @@ window.ODIN = {
   closeShareOverlay,
   openSearchView,
   performSearch,
+  openNearbyMap,
   destinationName,
   money,
   plural,
@@ -3421,4 +3457,144 @@ window.ODIN = {
 };
 
 
+
+
+function renderWalkBlock(walk) {
+  const stops = walk.stops || [];
+  const mapLink = walk.mapUrl ? `<a href="${escapeHTML(walk.mapUrl)}" target="_blank" rel="noopener" class="walk-map-link">Открыть в Яндекс.Картах</a><small style="display:block;margin-top:4px;font-size:10px;color:#888">* Маршрут может отличаться</small>` : "";
+  return `<div class="trip-walk">
+    <div class="trip-walk-head">
+      <strong>${escapeHTML(walk.title || "Пешая прогулка")}</strong>
+      <span>${escapeHTML(walk.summary || "")}</span>
+    </div>
+    <ol class="walk-stops">${stops.map((stop, i) => `
+      <li class="walk-stop">
+        <span class="walk-stop-num">${i + 1}</span>
+        <div class="walk-stop-copy">
+          <strong>${escapeHTML(stop.name)}</strong>
+          <small>${escapeHTML(stop.description || "")}</small>
+          <span class="walk-stop-meta">${stop.legMeters ? `${stop.legMeters} м · ${stop.legMinutes} мин ходьбы · ` : ""}${stop.dwell} мин на месте</span>
+        </div>
+      </li>
+    `).join("")}</ol>
+    ${mapLink}
+  </div>`;
+}
+function renderWalkSvg(walk) {
+  const stops = walk.stops || [];
+  if (!stops.length) return "";
+  const lats = stops.map((s) => s.lat);
+  const lngs = stops.map((s) => s.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const pad = 0.001;
+  const w = 260, h = 150;
+  const x = (lng) => 14 + ((lng - (minLng - pad)) / ((maxLng - minLng) + pad * 2)) * (w - 28);
+  const y = (lat) => 14 + (1 - (lat - (minLat - pad)) / ((maxLat - minLat) + pad * 2)) * (h - 28);
+  const pts = stops.map((s) => `${x(s.lng)},${y(s.lat)}`).join(" ");
+  const circles = stops.map((s, i) => `<circle cx="${x(s.lng)}" cy="${y(s.lat)}" r="9" class="walk-dot"/><text x="${x(s.lng)}" y="${y(s.lat)+3}" text-anchor="middle" class="walk-dot-text">${i + 1}</text>`).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" class="walk-map" role="img" aria-label="Маршрут прогулки">${stops.length > 1 ? `<polyline points="${pts}" class="walk-line"/>` : ""}${circles}</svg>`;
+}
+
+function openNearbyMap(hotel) {
+  if (!hotel) return;
+  const existing = document.getElementById("nearbyMapModal");
+  if (existing) existing.remove();
+  const allNearby = (hotel.nearby || []).filter((p) => p.lat && p.lng);
+  const hLat = hotel.meta && hotel.meta.lat;
+  const hLng = hotel.meta && hotel.meta.lng;
+  function haversine(aLat, aLng, bLat, bLng) {
+    const R = 6371000;
+    const toRad = (x) => x * Math.PI / 180;
+    const dLat = toRad(bLat - aLat);
+    const dLng = toRad(bLng - aLng);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  // filter to walkable (<= 5km radius from hotel); show max 6 closest
+  const maxRadius = 5000; // 5km walking radius
+  const sorted = allNearby.slice().sort((a, b) => {
+    const distA = hLat && hLng ? haversine(hLat, hLng, a.lat, a.lng) : 0;
+    const distB = hLat && hLng ? haversine(hLat, hLng, b.lat, b.lng) : 0;
+    return distA - distB;
+  });
+  let walkable = sorted.filter((p) => hLat && hLng && haversine(hLat, hLng, p.lat, p.lng) <= maxRadius).slice(0, 6);
+  // If still no walkable, show closest 4 (even if far) to avoid empty list
+  if (walkable.length < 2) walkable = sorted.slice(0, 4);
+  const rows = walkable.map((p) => {
+    const meters = hLat && hLng ? Math.round(haversine(hLat, hLng, p.lat, p.lng)) : 0;
+    const km = (meters / 1000).toFixed(1);
+    const kmNum = Number(km);
+    // Show walking time only (simpler, no "Авто")
+    const walkMinutes = Math.max(1, Math.round(meters / 1000 / 4.5 * 60));
+    const displayMinutes = walkMinutes;
+    const displayLabel = `${displayMinutes} мин`;
+    const steps = Math.round(meters / 0.75);
+    const kcal = Math.round(steps * 0.04);
+    return { poi: p, meters, km, walkMinutes, displayMinutes, displayLabel, steps, kcal };
+  });
+  const totalMeters = rows.reduce((a, r) => a + r.meters, 0);
+  const totalMinutes = rows.reduce((a, r) => a + r.displayMinutes, 0);
+  const totalSteps = rows.reduce((a, r) => a + r.steps, 0);
+  const totalKcal = rows.reduce((a, r) => a + r.kcal, 0);
+  const totalKm = (totalMeters / 1000).toFixed(1);
+  const totalLabel = `${totalMinutes} мин`;
+  const disclaimer = '<div class="nearby-disclaimer" style="font-size:10px;color:#888;margin-top:6px">* Время может отличаться, примерные значения</div>';
+  const svg = "";
+  const table = rows.map((r, i) => `<tr>
+    <td>${i + 1}</td>
+    <td>${escapeHTML(r.poi.name)}</td>
+    <td>${Number(r.km) >= 1 ? r.km + " км" : r.meters + " м"}</td>
+    <td>${r.displayLabel}</td>
+    <td>${r.steps > 0 ? r.steps.toLocaleString("ru-RU") : "—"}</td>
+    <td>${r.kcal > 0 ? r.kcal + " ккал" : "—"}</td>
+  </tr>`).join("");
+  const mapLink = hLat && hLng ? `https://yandex.ru/maps/?rtext=${[`${hLat},${hLng}`].concat(walkable.map((p) => `${p.lat},${p.lng}`)).join("~")}&rtt=pd` : "";
+  // transport options
+  const distKm = Math.round(totalMeters / 1000);
+  const taxiPrice = Math.max(150, distKm * 30);
+  const carsharePrice = Math.max(200, distKm * 8 + 100);
+  const transport = `
+    <div class="nearby-transport">
+      <h4>Транспорт (если далеко)</h4>
+      <div class="transport-card"><strong>Такси (Яндекс Go / Uber)</strong><span>~${taxiPrice} ₽ · ${Math.max(5, Math.round(distKm * 1.5))} мин</span><small>Вызов через приложение</small></div>
+      <div class="transport-card"><strong>Каршеринг (Делимобиль / Ситидрайв)</strong><span>~${carsharePrice} ₽ · ${Math.max(5, Math.round(distKm * 1.2))} мин</span><small>Ближайший автомобиль в радиусе 500 м</small></div>
+      <div class="transport-card"><strong>Автобус / троллейбус</strong><span>~30 ₽ · 15–30 мин</span><small>Остановка у отеля, маршруты 1, 4, 12</small></div>
+    </div>
+  `;
+  const modal = document.createElement("div");
+  modal.id = "nearbyMapModal";
+  modal.className = "nearby-map-modal";
+  modal.innerHTML = `
+    <div class="nearby-map-card">
+      <div class="nearby-map-head">
+        <strong>Карта района · ${escapeHTML(hotel.name || "")}</strong>
+        <button type="button" class="text-button small" data-close-nearby-map>Закрыть</button>
+      </div>
+      <div class="nearby-map-body">
+        <div class="nearby-map-left">
+          ${mapLink ? `<a href="${escapeHTML(mapLink)}" target="_blank" rel="noopener" class="walk-map-link">Открыть в Яндекс.Картах</a>` : ""}
+          <div class="nearby-map-totals">
+            <span>~${Number(totalKm) >= 1 ? totalKm + " км" : totalMeters + " м"}</span>
+            <span>~${totalLabel}</span>
+            <span>~${totalSteps > 0 ? totalSteps.toLocaleString("ru-RU") + " шагов" : "—"}</span>
+            <span>~${totalKcal > 0 ? totalKcal + " ккал" : "—"}</span>
+          </div>
+          ${disclaimer}
+          ${transport}
+        </div>
+        <div class="nearby-map-right">
+          <table class="nearby-map-table">
+            <thead><tr><th>#</th><th>Точка</th><th>Расстояние</th><th>Время</th><th>Шаги</th><th>Ккал</th></tr></thead>
+            <tbody>${table}</tbody>
+            <tfoot><tr><td colspan="2">Итого</td><td>${Number(totalKm) >= 1 ? totalKm + " км" : totalMeters + " м"}</td><td>${totalLabel}</td><td>${totalSteps > 0 ? totalSteps.toLocaleString("ru-RU") : "—"}</td><td>${totalKcal > 0 ? totalKcal + " ккал" : "—"}</td></tr></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("[data-close-nearby-map]").addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+}
 
