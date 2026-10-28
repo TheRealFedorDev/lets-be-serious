@@ -382,7 +382,6 @@ func (api *API) handleSharePage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Не удалось загрузить маршрут")
 		return
 	}
-	plan.Budget = prepareShareBudget(plan)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if err := sharePageTemplate.Execute(w, sharePageData{
@@ -393,12 +392,6 @@ func (api *API) handleSharePage(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
-}
-
-// prepareShareBudget оставляет бюджет без внутренней карты — она не нужна странице.
-func prepareShareBudget(plan TripPlan) TripBudget {
-	plan.Budget.Split = nil
-	return plan.Budget
 }
 
 func shareBlockIcon(kind string) string {

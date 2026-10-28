@@ -3113,6 +3113,7 @@ async function loadDemoScenario(id) {
     if (scenario.plan) {
       TRIP_UI.lastPlan = scenario.plan;
       renderTripPlan(scenario.plan);
+      window.ODIN?.emit?.("trip:ready", { plan: scenario.plan, scenario: scenario.id });
     } else {
       renderTripForm();
     }
@@ -3150,6 +3151,7 @@ async function submitTripPlan(event) {
     const plan = await api("/api/trip/plan", { method: "POST", body: payload });
     TRIP_UI.lastPlan = plan;
     renderTripPlan(plan);
+    window.ODIN?.emit?.("trip:ready", { plan });
   } catch (error) {
     if (errorBox) { errorBox.textContent = error.message; errorBox.classList.remove("hidden"); }
   } finally {
@@ -3351,6 +3353,7 @@ async function shareTrip(plan) {
   try {
     const response = await api("/api/trips/share", { method: "POST", body: { plan } });
     renderShareOverlay(response.url);
+    window.ODIN?.emit?.("trip:shared", { plan, url: response.url });
   } catch (error) {
     if (body) body.innerHTML = `<div class="trip-error">${escapeHTML(error.message)}</div>`;
   }
@@ -3397,12 +3400,21 @@ window.ODIN = {
   showToast,
   openHotel,
   openAssistant,
+  openTripPlanner,
+  closeTripPlanner,
+  shareTrip,
+  closeShareOverlay,
+  openSearchView,
+  performSearch,
+  destinationName,
   money,
   plural,
   formatDateRange,
+  formatShortDate,
   escapeHTML,
   needLabel,
   activeNeeds,
+  tripPlan: () => TRIP_UI.lastPlan,
   featureFlags: () => state.featureFlags || {},
   on: (event, handler) => document.addEventListener(`odin:${event}`, handler),
   emit: (event, detail) => document.dispatchEvent(new CustomEvent(`odin:${event}`, { detail })),
