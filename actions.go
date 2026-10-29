@@ -17,16 +17,43 @@ type AssistantAction struct {
 	Primary   bool     `json:"primary,omitempty"`
 	// Destination - slug города из контекста ответа: действие не теряет «Куда».
 	Destination string `json:"destination,omitempty"`
+	// Prefs - параметры, понятые из фразы: мастер поездки сразу собирает по ним вариант.
+	Prefs *AssistantTripPrefs `json:"prefs,omitempty"`
 }
 
 func buildAssistantActions(destination Destination, focus *AssistantHotel, message string) []AssistantAction {
 	actions := buildAssistantActionsRaw(destination, focus, message)
+	prefs, understood := extractTripPrefs(message, destination)
 	for index := range actions {
 		if actions[index].Destination == "" && destination.Slug != "" {
 			actions[index].Destination = destination.Slug
 		}
+		if understood && actions[index].Kind == "trip" {
+			p := prefs
+			actions[index].Prefs = &p
+			if summary := tripPrefsSummary(prefs); summary != "" {
+				actions[index].Label = "Собрать поездку: " + summary
+			}
+		}
+	}
+	if wantsSurprise(message) {
+		p := prefs
+		p.Destination = ""
+		surprise := AssistantAction{ID: "surprise", Label: "🎲 Поездка-сюрприз", Kind: "surprise", Icon: "route", Primary: true, Prefs: &p}
+		if summary := tripPrefsSummary(p); summary != "" {
+			surprise.Label += ": " + summary
+		}
+		for index := range actions {
+			actions[index].Primary = false
+		}
+		actions = append([]AssistantAction{surprise}, actions...)
 	}
 	return actions
+}
+
+// wantsSurprise - просьба выбрать поездку наугад.
+func wantsSurprise(message string) bool {
+	return containsAny(strings.ToLower(message), "удиви", "сюрприз", "рандом", "наугад", "мне повез", "куда угодно", "куда-нибудь")
 }
 
 func buildAssistantActionsRaw(destination Destination, focus *AssistantHotel, message string) []AssistantAction {

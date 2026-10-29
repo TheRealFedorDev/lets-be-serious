@@ -23,17 +23,27 @@ type TripRequest struct {
 	Mood        string   `json:"mood"`
 	Tags        []string `json:"tags"`
 	Pace        string   `json:"pace"`
+	// Предпочтения мастера / ассистента (prefs.go).
+	Weather    string    `json:"weather,omitempty"`
+	Interests  []string  `json:"interests,omitempty"`
+	Needs      string    `json:"needs,omitempty"` // key:minutes:level через запятую, как в поиске
+	Room       RoomPrefs `json:"room,omitempty"`
+	MaxWalkMin int       `json:"maxWalkMin,omitempty"`
 }
 
 type TripBlock struct {
-	Time    string `json:"time"`
-	Type    string `json:"type"`
-	Title   string `json:"title"`
-	Place   string `json:"place,omitempty"`
-	Note    string `json:"note,omitempty"`
-	Price   int    `json:"price"`
-	Minutes int    `json:"minutes,omitempty"`
-	POIID   int64  `json:"poiId,omitempty"`
+	Time     string `json:"time"`
+	Type     string `json:"type"`
+	Title    string `json:"title"`
+	Place    string `json:"place,omitempty"`
+	Note     string `json:"note,omitempty"`
+	Price    int    `json:"price"`
+	Minutes  int    `json:"minutes,omitempty"`
+	POIID    int64  `json:"poiId,omitempty"`
+	Distance string `json:"distance,omitempty"`
+	// Bookable - платная позиция, которую можно оплатить вместе с номером (order.go).
+	Bookable bool   `json:"bookable,omitempty"`
+	ItemID   string `json:"itemId,omitempty"`
 }
 
 type TripDay struct {
@@ -43,6 +53,8 @@ type TripDay struct {
 	Blocks  []TripBlock   `json:"blocks"`
 	Total   int           `json:"total"`
 	Walk    *WalkingRoute `json:"walk,omitempty"`
+	// WeatherFit - подходит ли погода под пожелание; nil, если пожелания нет.
+	WeatherFit *bool `json:"weatherFit,omitempty"`
 }
 
 type TripBudget struct {
@@ -61,21 +73,35 @@ type TripMatch struct {
 }
 
 type TripPlan struct {
-	Destination string     `json:"destination"`
-	City        string     `json:"city"`
-	Image       string     `json:"image"`
-	CheckIn     string     `json:"checkIn"`
-	CheckOut    string     `json:"checkOut"`
-	Nights      int        `json:"nights"`
-	Guests      int        `json:"guests"`
-	Pace        string     `json:"pace"`
-	Hotel       HotelCard  `json:"hotel"`
-	Match       TripMatch  `json:"match"`
-	Days        []TripDay  `json:"days"`
-	Budget      TripBudget `json:"budget"`
-	Tips        []string   `json:"tips"`
-	Notice      string     `json:"notice,omitempty"`
-	Cached      bool       `json:"cached"`
+	Destination string        `json:"destination"`
+	City        string        `json:"city"`
+	Image       string        `json:"image"`
+	CheckIn     string        `json:"checkIn"`
+	CheckOut    string        `json:"checkOut"`
+	Nights      int           `json:"nights"`
+	Guests      int           `json:"guests"`
+	Pace        string        `json:"pace"`
+	Hotel       HotelCard     `json:"hotel"`
+	Match       TripMatch     `json:"match"`
+	Days        []TripDay     `json:"days"`
+	Budget      TripBudget    `json:"budget"`
+	Tips        []string      `json:"tips"`
+	Notice      string        `json:"notice,omitempty"`
+	Cached      bool          `json:"cached"`
+	Room        *Room         `json:"room,omitempty"`
+	RoomWhy     []string      `json:"roomWhy,omitempty"`
+	Prefs       TripPrefs     `json:"prefs"`
+	DateHint    *DateHint     `json:"dateHint,omitempty"`
+	Nearby      []NearbyPlace `json:"nearby,omitempty"`
+}
+
+// TripPrefs - эхо применённых предпочтений, чтобы UI показал «понял вас так».
+type TripPrefs struct {
+	Weather    string    `json:"weather,omitempty"`
+	Interests  []string  `json:"interests,omitempty"`
+	Needs      string    `json:"needs,omitempty"`
+	Room       RoomPrefs `json:"room"`
+	MaxWalkMin int       `json:"maxWalkMin,omitempty"`
 }
 
 type tripCacheEntry struct {
@@ -94,6 +120,8 @@ func tripCacheKey(req TripRequest) string {
 		req.Destination, req.HotelSlug, req.From, req.To,
 		fmt.Sprint(req.Guests), fmt.Sprint(req.Budget), req.Mood, req.Pace,
 		strings.Join(req.Tags, ","),
+		req.Weather, strings.Join(req.Interests, ","), req.Needs,
+		req.Room.Bed, req.Room.View, fmt.Sprint(req.Room.MinSize, req.Room.Kitchen, req.Room.KidsCot), fmt.Sprint(req.MaxWalkMin),
 	}, "|")))
 	return fmt.Sprint(hasher.Sum64())
 }
@@ -108,6 +136,7 @@ func (s *Store) BuildTrip(ctx context.Context, userID int64, req TripRequest) (T
 	if req.Pace != "active" {
 		req.Pace = "calm"
 	}
+	normalizePrefs(&req)
 	if req.From == "" {
 		req.From = time.Now().AddDate(0, 0, 14).Format("2006-01-02")
 	}
@@ -141,6 +170,7 @@ func (s *Store) BuildTrip(ctx context.Context, userID int64, req TripRequest) (T
 		CheckIn:     req.From,
 		CheckOut:    req.To,
 		MaxPrice:    perNightBudget,
+		Needs:       ParseNeeds([]string{req.Needs}),
 	}
 	result, err := s.Search(ctx, userID, searchParams)
 	if err != nil {
@@ -225,12 +255,24 @@ func (s *Store) BuildTrip(ctx context.Context, userID int64, req TripRequest) (T
 		Notice: notice,
 	}
 
+	plan.Prefs = TripPrefs{Weather: req.Weather, Interests: req.Interests, Needs: req.Needs, Room: req.Room, MaxWalkMin: req.MaxWalkMin}
+	if room, why, ok := s.tripRoom(ctx, hotel, req); ok {
+		plan.Room, plan.RoomWhy = &room, why
+		// Проживание считаем по выбранному номеру, а не по минимальной цене отеля.
+		hotel.PriceBreakdown = room.PriceBreakdown
+	}
+
 	plan.Days = buildTripDays(destination, hotel, pois, req, nights, s)
+	markBookableItems(plan.Days)
 	plan.Budget = buildTripBudget(hotel, req, nights, plan.Days)
 	if plan.Notice == "" && strings.TrimSpace(req.HotelSlug) == hotel.Slug && req.Budget > 0 && !plan.Budget.Fits {
 		plan.Notice = fmt.Sprintf("%s выше бюджета на %s — оставили выбранный отель.", hotel.Name, money(plan.Budget.Delta))
 	}
 	plan.Tips = buildTripTips(destination, hotel, req, plan, pois)
+	plan.DateHint = s.bestDates(destination.City, req.From, nights, req.Weather)
+	if len(req.Interests) > 0 || req.MaxWalkMin > 0 {
+		plan.Nearby = nearbyPlaces(hotel, pois, req)
+	}
 	return plan, nil
 }
 
@@ -255,6 +297,10 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 		weather[index] = s.Weather(destination.City, addDays(req.From, index))
 	}
 
+	poiByID := make(map[int64]POI, len(pois))
+	for _, poi := range pois {
+		poiByID[poi.ID] = poi
+	}
 	sightseeing := make([]POI, 0, len(pois))
 	food := make([]POI, 0, len(pois))
 	indoor := make([]POI, 0, len(pois))
@@ -270,6 +316,9 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 			sightseeing = append(sightseeing, poi)
 		}
 	}
+	sightseeing = rankPOIs(sightseeing, hotel, req)
+	food = rankPOIs(food, hotel, req)
+	indoor = rankPOIs(indoor, hotel, req)
 	breakfastIncluded := hotel.PriceBreakdown.Breakfast > 0
 	const breakfastNote = "включён в проживание"
 	pick := func(list []POI, index int) (POI, bool) {
@@ -283,8 +332,17 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 		date := addDays(req.From, index)
 		info := weather[index]
 		day := TripDay{Date: date, Weather: info, Blocks: make([]TripBlock, 0, 5)}
-		rainy := info.Condition == "rain"
+		rainy := indoorDay(info, req.Weather)
 		departure := index == nights
+		// В дождь (или погоду против пожелания) все точки дня - из списка «под крышей».
+		main := sightseeing
+		if rainy {
+			main = indoor
+		}
+		if req.Weather != "" {
+			fit := weatherFits(info, req.Weather)
+			day.WeatherFit = &fit
+		}
 
 		if index == 0 {
 			day.Title = "Приезд и первый вечер"
@@ -298,7 +356,7 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 				// Активный заезд: вечерняя точка и ужин в другом месте, не рядом с отелем.
 				dinnerIdx = 1
 				evening := TripBlock{Time: "17:30", Type: "walk", Title: "Вечерняя прогулка по набережной и центру", Price: 0, Minutes: 60}
-				if poi, ok := pick(sightseeing, 0); ok {
+				if poi, ok := pick(main, 0); ok {
 					evening = TripBlock{
 						Time: "17:30", Type: "activity", Title: "Вечерняя точка",
 						Place: poi.Name, Note: poi.Description, Price: poiPrice(poi) * req.Guests, Minutes: poi.Minutes, POIID: poi.ID,
@@ -329,7 +387,7 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 					TripBlock{Time: "07:30", Type: "walk", Title: "Утренняя пробежка или прогулка", Place: hotel.Name, Price: 0, Minutes: 45},
 					breakfast,
 				)
-				if poi, ok := pick(sightseeing, nights+1); ok {
+				if poi, ok := pick(main, nights+1); ok {
 					day.Blocks = append(day.Blocks, TripBlock{
 						Time: "09:45", Type: "activity", Title: "Последняя точка перед отъездом",
 						Place: poi.Name, Price: poiPrice(poi) * req.Guests, Minutes: poi.Minutes, POIID: poi.ID,
@@ -350,10 +408,6 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 			)
 		} else {
 			day.Title = fmt.Sprintf("День %d · %s", index+1, tripDayTheme(index, req.Pace, rainy))
-			main := sightseeing
-			if rainy {
-				main = indoor
-			}
 			morning := TripBlock{Time: "09:30", Type: "food", Title: "Завтрак и кофе", Price: 650 * req.Guests}
 			if breakfastIncluded {
 				morning.Price, morning.Note = 0, breakfastNote
@@ -377,7 +431,7 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 				day.Blocks[1].POIID = poi.ID
 			}
 			if req.Pace == "active" {
-				if poi, ok := pick(sightseeing, index*2+1); ok {
+				if poi, ok := pick(main, index*2+1); ok {
 					day.Blocks = append(day.Blocks, TripBlock{
 						Time: "16:00", Type: "activity", Title: "Ещё одна точка",
 						Place: poi.Name, Price: poiPrice(poi) * req.Guests, Minutes: poi.Minutes, POIID: poi.ID,
@@ -394,6 +448,11 @@ func buildTripDays(destination Destination, hotel HotelCard, pois []POI, req Tri
 		}
 
 		day.Walk = planWalkingRoute(hotel, pois, req.Pace, rainy, index)
+		for i := range day.Blocks {
+			if poi, ok := poiByID[day.Blocks[i].POIID]; ok {
+				day.Blocks[i].Distance = poiDistanceLabel(hotel, poi)
+			}
+		}
 		for _, block := range day.Blocks {
 			day.Total += block.Price
 		}

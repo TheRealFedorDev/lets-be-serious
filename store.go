@@ -221,7 +221,7 @@ func (s *Store) migrate() error {
 	if err := s.ensureColumn("hotels", "capacity_hint", "INTEGER NOT NULL DEFAULT 2"); err != nil {
 		return err
 	}
-	return nil
+	return s.ensureOrderTables()
 }
 
 func (s *Store) ensureColumn(table, column, definition string) error {
@@ -925,6 +925,7 @@ func (s *Store) HotelBySlug(ctx context.Context, userID int64, slug, checkIn, ch
 			rooms[index].Available = rooms[index].TotalUnits
 		}
 	}
+	annotateRooms(rooms, detail.Meta)
 	detail.Rooms = rooms
 
 	allPOIs, err := s.poisForDestination(ctx, detail.DestinationSlug, "", 24)
@@ -1117,24 +1118,24 @@ func (s *Store) Weather(destination, date string) WeatherInfo {
 	if parsed, err := time.Parse("2006-01-02", date); err == nil {
 		month = int(parsed.Month())
 	}
-	conditions := []string{"rain", "heat", "mild", "cold", "mild"}
-	// seasonal bias
-	if month >= 6 && month <= 8 {
-		conditions = []string{"heat", "mild", "heat", "mild", "rain"}
-	} else if month <= 2 || month == 12 {
-		conditions = []string{"cold", "mild", "cold", "snow", "mild"}
-	} else if month >= 9 && month <= 11 {
-		conditions = []string{"rain", "mild", "rain", "cold", "mild"}
+	// Детерминированный «прогноз» по климатической норме города: средняя температура месяца
+	// ± 4 °C и вероятность осадков по месяцу. Ниже нуля осадки - снег.
+	normals, ok := cityClimate[strings.TrimSpace(destination)]
+	if !ok {
+		normals = cityClimate["Москва"]
 	}
-	condition := conditions[seed%len(conditions)]
-	temp := 18 + seed%12
-	switch condition {
-	case "heat":
-		temp = 26 + seed%8
-	case "rain":
-		temp = 12 + seed%8
-	case "cold", "snow":
-		temp = -4 + seed%8
+	temp := normals[month-1] + seed%9 - 4
+	precip := []int{35, 30, 30, 30, 30, 30, 30, 30, 30, 35, 40, 40}[month-1]
+	condition := "mild"
+	switch {
+	case (seed/9)%100 < precip && temp <= 0:
+		condition = "snow"
+	case (seed/9)%100 < precip:
+		condition = "rain"
+	case temp >= 26:
+		condition = "heat"
+	case temp < 10:
+		condition = "cold"
 	}
 	descriptions := map[string]string{
 		"rain": "Возможен дождь — стоит выбрать отель с крытыми зонами",
@@ -1160,6 +1161,22 @@ func (s *Store) Weather(destination, date string) WeatherInfo {
 		Icon:        icons[condition],
 		Tags:        tags[condition],
 	}
+}
+
+// cityClimate - средняя температура по месяцам (январь..декабрь), °C.
+var cityClimate = map[string][12]int{
+	"Москва":          {-6, -6, -1, 6, 13, 17, 19, 17, 11, 5, -1, -5},
+	"Санкт-Петербург": {-6, -6, -2, 5, 11, 16, 19, 17, 11, 5, 0, -4},
+	"Сочи":            {6, 6, 9, 13, 17, 21, 24, 24, 20, 16, 11, 8},
+	"Казань":          {-11, -10, -4, 6, 13, 18, 20, 18, 11, 4, -3, -8},
+	"Калининград":     {-1, -1, 2, 7, 12, 16, 18, 18, 13, 8, 3, 0},
+	"Алтай":           {-14, -12, -5, 4, 11, 16, 18, 16, 10, 3, -6, -12},
+	"Екатеринбург":    {-13, -11, -4, 4, 11, 16, 18, 15, 9, 2, -5, -11},
+	"Нижний Новгород": {-9, -8, -3, 6, 13, 17, 19, 17, 11, 4, -2, -7},
+	"Иркутск":         {-18, -15, -6, 3, 10, 16, 18, 16, 9, 1, -9, -16},
+	"Владивосток":     {-12, -9, -2, 5, 10, 14, 18, 20, 16, 9, -1, -9},
+	"Мурманск":        {-10, -10, -7, -2, 4, 9, 13, 11, 7, 1, -4, -8},
+	"Суздаль":         {-9, -8, -3, 5, 12, 16, 18, 16, 10, 4, -2, -6},
 }
 
 // buildPriceBreakdown - единая формула цены за ночь (источник истины для
@@ -1217,7 +1234,14 @@ func (s *Store) Trips(ctx context.Context, userID int64) ([]Trip, error) {
 		trip.CanCancel = trip.Status == "confirmed" && trip.CheckIn > today
 		trips = append(trips, trip)
 	}
-	return trips, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if err := s.attachOrders(ctx, userID, trips); err != nil {
+		return nil, err
+	}
+	return trips, nil
 }
 
 func (s *Store) CreateBooking(ctx context.Context, userID int64, input BookingInput) (Trip, error) {
@@ -1334,6 +1358,7 @@ func (s *Store) CancelBooking(ctx context.Context, userID, bookingID int64) erro
 	if affected == 0 {
 		return ErrCantCancel
 	}
+	s.cancelOrderFor(ctx, bookingID)
 	return nil
 }
 

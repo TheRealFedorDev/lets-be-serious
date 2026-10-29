@@ -1938,6 +1938,7 @@ function completeAuth(payload) {
     if (pending.type === "favorite") toggleFavorite(pending.id);
     else if (pending.type === "booking") startBooking(pending.roomId);
     else if (pending.type === "trips") showTrips(pending.tab || "upcoming");
+    else if (pending.type === "callback" && typeof pending.run === "function") pending.run();
   }
 }
 
@@ -2095,10 +2096,11 @@ function renderTrips() {
             <div><span>Гости</span><strong>${trip.guests} ${plural(trip.guests, "гость", "гостя", "гостей")}</strong></div>
             <div><span>Ночей</span><strong>${trip.nights}</strong></div>
           </div>
+          ${tripItemsMarkup(trip)}
           <div class="trip-footer">
             <span class="trip-code">Код брони <strong>${escapeHTML(trip.code)}</strong></span>
             <div class="trip-actions">
-              <span class="trip-total">${money(trip.total)}</span>
+              <span class="trip-total">${money(trip.orderTotal || trip.total)}</span>
               <button type="button" class="ghost-button" data-open-trip-hotel="${escapeHTML(trip.hotelSlug)}">Отель</button>
               ${trip.canCancel ? `<button type="button" class="ghost-button" data-cancel-trip="${trip.id}">Отменить</button>` : ""}
             </div>
@@ -2123,6 +2125,20 @@ async function cancelTrip(id) {
   } catch (error) {
     showToast(error.message, "error");
   }
+}
+
+// Оплаченная вместе с номером программа (единая оплата из мастера поездки).
+function tripItemsMarkup(trip) {
+  const items = trip.items || [];
+  if (!items.length) return "";
+  return `<details class="trip-items">
+    <summary>Программа: ${items.length} ${plural(items.length, "оплаченная позиция", "оплаченные позиции", "оплаченных позиций")} · ${money(trip.orderTotal - trip.total)}</summary>
+    <ul>${items.map((item) => `<li class="${item.status === "cancelled" ? "is-cancelled" : ""}">
+      <span>${escapeHTML(formatShortDate(item.date))}, ${escapeHTML(item.time)}</span>
+      <strong>${escapeHTML(item.place || item.title)}</strong>
+      <span>${money(item.price)}${item.status === "cancelled" ? " · отменено" : ""}</span>
+    </li>`).join("")}</ul>
+  </details>`;
 }
 
 async function loadTripsOnly() {
@@ -2383,7 +2399,18 @@ function openAssistant(hotelSlug = null) {
   assistantScrim.classList.add("is-open");
   syncBodyLock();
   loadAssistantStatus();
-  window.setTimeout(() => $("#assistantInput")?.focus(), 120);
+  // Фокус только после того, как панель доехала: фокус во время выезда заставляет браузер
+  // прокручивать к полю и панель застревает наполовину за краем экрана.
+  let focused = false;
+  const focusInput = () => {
+    if (focused || !assistantDrawer.classList.contains("is-open")) return;
+    focused = true;
+    assistantDrawer.removeEventListener("transitionend", onSlid);
+    $("#assistantInput")?.focus({ preventScroll: true });
+  };
+  const onSlid = (event) => { if (event.target === assistantDrawer && event.propertyName === "transform") focusInput(); };
+  assistantDrawer.addEventListener("transitionend", onSlid);
+  window.setTimeout(focusInput, 400);
 }
 
 function closeAssistant() {
@@ -2466,6 +2493,7 @@ function assistantActionsMarkup(actions) {
       data-action-prompt="${escapeHTML(action.prompt || "")}"
       data-action-hotel="${escapeHTML(action.hotelSlug || "")}"
       data-action-destination="${escapeHTML(action.destination || "")}"
+      data-action-prefs="${escapeHTML(action.prefs ? JSON.stringify(action.prefs) : "")}"
       data-action-tags="${escapeHTML((action.tags || []).join(","))}">
       ${icons[action.icon] || icons.route}<span>${escapeHTML(action.label)}</span>
     </button>
@@ -2481,13 +2509,22 @@ async function handleAssistantAction(button) {
   const actionDestination = button.dataset.actionDestination || "";
   const dest = actionDestination || state.search.destination || "";
   const destName = (actionDestination && destinationName(actionDestination)) || state.search.destinationName || "";
+  if (kind === "surprise" && window.ODIN?.openSurprise) {
+    closeAssistant();
+    let prefs = null;
+    try { prefs = button.dataset.actionPrefs ? JSON.parse(button.dataset.actionPrefs) : null; } catch { prefs = null; }
+    window.ODIN.openSurprise(prefs);
+    return;
+  }
   if (kind === "trip") {
     closeAssistant();
     if (actionDestination) {
       state.search.destination = actionDestination;
       state.search.destinationName = destName;
     }
-    openTripPlanner({ hotelSlug, destination: actionDestination || undefined });
+    let prefs = null;
+    try { prefs = button.dataset.actionPrefs ? JSON.parse(button.dataset.actionPrefs) : null; } catch { prefs = null; }
+    openTripPlanner({ hotelSlug, destination: actionDestination || undefined, prefs });
     return;
   }
   if (kind === "hotel" && hotelSlug) {
@@ -3164,6 +3201,11 @@ function tripFormMarkup() {
 }
 
 function renderTripForm(prefill = {}) {
+  // Пошаговый мастер (assets/wizard.js) заменяет одношаговую форму, если подключён.
+  if (window.ODIN?.renderTripWizard) {
+    window.ODIN.renderTripWizard(prefill);
+    return;
+  }
   const body = document.getElementById("tripBody");
   const title = document.getElementById("tripTitle");
   if (!body) return;
@@ -3507,6 +3549,11 @@ window.ODIN = {
   openSearchView,
   performSearch,
   openNearbyMap,
+  openAuth,
+  showTrips,
+  loadDemoScenario,
+  todayISO,
+  addDaysISO,
   destinationName,
   money,
   plural,

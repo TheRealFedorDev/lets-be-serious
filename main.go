@@ -263,6 +263,8 @@ func routes(api *API, cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/pois/{id}", api.handlePOI)
 	mux.HandleFunc("GET /api/trips", api.requireAuth(api.handleTrips))
 	mux.HandleFunc("POST /api/bookings", api.requireAuth(api.handleCreateBooking))
+	mux.HandleFunc("POST /api/trip/checkout", api.requireAuth(api.handleTripCheckout))
+	mux.HandleFunc("POST /api/trip/surprise", api.handleTripSurprise)
 	mux.HandleFunc("POST /api/bookings/{id}/cancel", api.requireAuth(api.handleCancelBooking))
 	mux.HandleFunc("GET /api/favorites", api.requireAuth(api.handleFavorites))
 	mux.HandleFunc("POST /api/favorites/{id}", api.requireAuth(api.handleToggleFavorite))
@@ -436,6 +438,33 @@ func (api *API) handleTripPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	tripToCache(key, plan)
 	writeJSON(w, http.StatusOK, plan)
+}
+
+func (api *API) handleTripSurprise(w http.ResponseWriter, r *http.Request) {
+	var req SurpriseRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте параметры поездки")
+		return
+	}
+	if req.Guests != 0 && (req.Guests < 1 || req.Guests > 10) {
+		writeError(w, http.StatusBadRequest, guestsError)
+		return
+	}
+	if msg := validateStay(req.From, req.To); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	result, err := api.store.Surprise(r.Context(), api.optionalUserID(r), req)
+	var empty *SurpriseEmptyError
+	if errors.As(err, &empty) {
+		writeError(w, http.StatusNotFound, empty.Hint)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Не удалось собрать сюрприз")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func queryBool(query url.Values, key string) bool {
@@ -628,41 +657,95 @@ func (api *API) handleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.GuestName = strings.TrimSpace(input.GuestName)
-	input.GuestEmail = strings.ToLower(strings.TrimSpace(input.GuestEmail))
-	input.GuestPhone = strings.TrimSpace(input.GuestPhone)
-	if len([]rune(input.GuestName)) < 2 || len([]rune(input.GuestName)) > 80 {
-		writeError(w, http.StatusBadRequest, "Укажите имя гостя")
-		return
-	}
-	if !validEmail(input.GuestEmail) {
-		writeError(w, http.StatusBadRequest, "Укажите корректный email")
-		return
-	}
-	if len(input.GuestPhone) < 5 || len(input.GuestPhone) > 30 {
-		writeError(w, http.StatusBadRequest, "Укажите телефон для связи")
+	if msg := normalizeGuest(&input.GuestName, &input.GuestEmail, &input.GuestPhone); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 
 	user := currentUser(r)
 	trip, err := api.store.CreateBooking(r.Context(), user.ID, input)
-	var capErr *CapacityError
-	switch {
-	case errors.As(err, &capErr):
-		writeError(w, http.StatusBadRequest, capErr.Error())
-		return
-	case errors.Is(err, ErrUnavailable):
-		writeError(w, http.StatusConflict, "Этот номер уже занят на выбранные даты")
-		return
-	case errors.Is(err, ErrNotFound):
-		writeError(w, http.StatusNotFound, "Номер не найден")
-		return
-	case err != nil:
-		writeError(w, http.StatusBadRequest, "Не удалось создать бронирование. Проверьте даты и гостей.")
+	if writeBookingError(w, err) {
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, trip)
+}
+
+// normalizeGuest чистит контакты гостя и возвращает текст ошибки ("" - всё в порядке).
+func normalizeGuest(name, email, phone *string) string {
+	*name = strings.TrimSpace(*name)
+	*email = strings.ToLower(strings.TrimSpace(*email))
+	*phone = strings.TrimSpace(*phone)
+	if len([]rune(*name)) < 2 || len([]rune(*name)) > 80 {
+		return "Укажите имя гостя"
+	}
+	if !validEmail(*email) {
+		return "Укажите корректный email"
+	}
+	if len(*phone) < 5 || len(*phone) > 30 {
+		return "Укажите телефон для связи"
+	}
+	return ""
+}
+
+// writeBookingError отвечает на ошибку брони; true - ответ уже отправлен.
+func writeBookingError(w http.ResponseWriter, err error) bool {
+	var capErr *CapacityError
+	switch {
+	case err == nil:
+		return false
+	case errors.As(err, &capErr):
+		writeError(w, http.StatusBadRequest, capErr.Error())
+	case errors.Is(err, ErrUnavailable):
+		writeError(w, http.StatusConflict, "Этот номер уже занят на выбранные даты")
+	case errors.Is(err, ErrNotFound):
+		writeError(w, http.StatusNotFound, "Номер не найден")
+	default:
+		writeError(w, http.StatusBadRequest, "Не удалось создать бронирование. Проверьте даты и гостей.")
+	}
+	return true
+}
+
+func (api *API) handleTripCheckout(w http.ResponseWriter, r *http.Request) {
+	var input CheckoutInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Проверьте данные заказа")
+		return
+	}
+	if msg := normalizeGuest(&input.GuestName, &input.GuestEmail, &input.GuestPhone); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if input.Trip.Guests < 1 || input.Trip.Guests > 10 {
+		writeError(w, http.StatusBadRequest, guestsError)
+		return
+	}
+	if msg := validateStay(input.Trip.From, input.Trip.To); msg != "" || input.Trip.From == "" || input.Trip.To == "" {
+		if msg == "" {
+			msg = "Укажите даты поездки"
+		}
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+
+	user := currentUser(r)
+	result, err := api.store.Checkout(r.Context(), user.ID, input)
+	var itemErr *ItemInputError
+	switch {
+	case errors.As(err, &itemErr):
+		writeError(w, http.StatusBadRequest, itemErr.Message)
+		return
+	case errors.Is(err, ErrPlanChanged):
+		writeError(w, http.StatusConflict, "Маршрут изменился — соберите его заново перед оплатой")
+		return
+	case errors.Is(err, ErrNotFound) && result.Trip.ID == 0 && input.RoomID == 0:
+		writeError(w, http.StatusBadRequest, "Выберите номер")
+		return
+	}
+	if writeBookingError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (api *API) handleCancelBooking(w http.ResponseWriter, r *http.Request) {

@@ -129,8 +129,8 @@
       (num(b.minutes) ? " · " + num(b.minutes) + " мин" : "") + "</span>" +
       '<span class="tx-price' + (num(b.price) > 0 ? "" : " is-free") + '">' + price + "</span></div>" +
       "<strong>" + esc(b.title) + "</strong>" +
-      (b.place ? '<span class="tx-place">' + esc(b.place) + "</span>" : "") +
-      (b.note ? '<span class="tx-note">' + esc(b.note) + "</span>" : "") + "</div></li>";
+      (b.place ? '<span class="tx-place">' + esc(b.place) + (b.distance ? ' · <span class="tx-dist">' + esc(b.distance) + "</span>" : "") + "</span>" : "") +
+      (b.note ? '<span class="tx-note">' + esc(b.note) + "</span>" : "") + cartToggle(b) + "</div></li>";
   }
 
   function walkMarkup(w) {
@@ -152,8 +152,8 @@
     var rest = ((S.dayPace && S.dayPace[S.tab]) || S.plan.pace) === "active" ? "насыщенный" : "спокойный";
     return '<div class="tx-day-head"><div><span class="tx-kicker">' + esc(O.formatShortDate(d.date)) + " · " + rest + " темп</span>" +
       "<h3>" + esc(d.title) + "</h3></div>" +
-      '<button type="button" class="tx-rebuild" id="txRebuild"' + (S.busy ? " disabled" : "") + ">" +
-      ico('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>') + "<span>" + (S.busy ? "Перестраиваем…" : "Перестроить день") + "</span></button></div>" +
+      (S.wizard ? "" : '<button type="button" class="tx-rebuild" id="txRebuild"' + (S.busy ? " disabled" : "") + ">" +
+      ico('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>') + "<span>" + (S.busy ? "Перестраиваем…" : "Перестроить день") + "</span></button>") + "</div>" +
       '<ol class="tx-timeline">' + (d.blocks || []).map(blockMarkup).join("") + "</ol>" +
       walkMarkup(d.walk) +
       '<div class="tx-day-total"><span>Итого за день</span><strong>' + money(num(d.total)) + "</strong></div>";
@@ -180,6 +180,42 @@
 
   /* ---------- рендер ---------- */
 
+  // Мастер: платную позицию можно включить в оплату вместе с номером.
+  function cartToggle(b) {
+    if (!S.wizard || !b.bookable || !O.wizard) return "";
+    var on = O.wizard.inCart(b.itemId);
+    return '<button type="button" class="tx-cart' + (on ? " is-on" : "") + '" aria-pressed="' + on + '" data-tx-item="' + esc(b.itemId) + '">' +
+      (on ? "✓ В оплате" : "+ Добавить в оплату") + "</button>";
+  }
+
+  function payLabel() {
+    var stay = num(((S.plan.room || {}).priceBreakdown || {}).total) * num(S.plan.nights);
+    return "К оплате · " + money(stay + (O.wizard ? O.wizard.cartTotal() : 0));
+  }
+
+  // Мастер: выбранный номер, погодная подсказка и «что рядом с отелем».
+  function prefsMarkup(plan) {
+    var out = "";
+    var r = plan.room;
+    if (r) {
+      out += '<section class="tx-room"><div><span class="tx-kicker">Ваш номер</span><strong>' + esc(r.name) + " · " + money(num((r.priceBreakdown || {}).total)) + " за ночь</strong>" +
+        '<span class="tx-note">' + esc(r.description || "") + "</span></div>" +
+        '<ul class="tx-room-why">' + (plan.roomWhy || []).map(function (w) {
+          var miss = w.indexOf("✗") === 0;
+          return '<li class="' + (miss ? "is-miss" : "is-ok") + '">' + esc(w) + "</li>";
+        }).join("") + "</ul></section>";
+    }
+    if (plan.dateHint) {
+      out += '<div class="tx-notice tx-datehint" role="status">🌦 ' + esc(plan.dateHint.text) + "</div>";
+    }
+    if ((plan.nearby || []).length) {
+      out += '<section class="tx-nearby"><h3>Рядом с отелем</h3><ul>' + plan.nearby.map(function (n) {
+        return '<li class="' + (n.match ? "is-match" : "") + '"><strong>' + esc(n.name) + "</strong><span>" + esc(n.distance) + (n.match ? " · под ваши интересы" : "") + "</span></li>";
+      }).join("") + "</ul></section>";
+    }
+    return out;
+  }
+
   function render(host, buttons) {
     var plan = S.plan;
     var m = plan.match || {};
@@ -195,6 +231,7 @@
       '<span id="txSlotRestart"></span><span id="txSlotBook"></span></div></header>' +
       (plan.notice ? '<div class="tx-notice" role="status">' + esc(plan.notice) + "</div>" : "") +
       hotelMarkup(plan) +
+      (S.wizard ? prefsMarkup(plan) : "") +
       whyMarkup(plan) +
       '<section class="tx-days" aria-label="План по дням">' + tabsMarkup(plan) +
       '<div class="tx-panel" id="txPanel" role="tabpanel" tabindex="0" aria-labelledby="txTab' + S.tab + '">' + panelMarkup() + "</div></section>" +
@@ -202,6 +239,12 @@
       ((plan.tips || []).length ? '<section class="tx-tips"><h3>Советы</h3><ul>' + plan.tips.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></section>" : "") +
       "</div>";
 
+    if (S.wizard) {
+      var slot = host.querySelector("#txSlotRestart");
+      if (slot) slot.outerHTML = '<button type="button" class="tx-btn" id="txEdit">Изменить параметры</button>';
+      slot = host.querySelector("#txSlotBook");
+      if (slot) slot.outerHTML = '<button type="button" class="tx-btn tx-btn-primary" id="txPay">' + esc(payLabel()) + "</button>";
+    }
     // исходные кнопки app.js переносим в наш layout (их обработчики сохраняются)
     if (buttons.restart) {
       buttons.restart.className = "tx-btn";
@@ -241,6 +284,18 @@
       if (e.target.closest("#txWhyBtn")) return toggleWhy(host);
       if (e.target.closest("#txShare")) return O.shareTrip(S.plan);
       if (e.target.closest("#txRebuild")) return rebuild(host);
+      if (e.target.closest("#txEdit") && O.wizard) return O.wizard.edit();
+      if (e.target.closest("#txPay") && O.wizard) return O.wizard.checkout();
+      var item = e.target.closest("[data-tx-item]");
+      if (item && O.wizard) {
+        var on = O.wizard.toggle(item.getAttribute("data-tx-item"));
+        item.classList.toggle("is-on", on);
+        item.setAttribute("aria-pressed", String(on));
+        item.textContent = on ? "✓ В оплате" : "+ Добавить в оплату";
+        var payBtn = host.querySelector("#txPay");
+        if (payBtn) payBtn.textContent = payLabel();
+        return;
+      }
     }, opt);
     host.addEventListener("keydown", function (e) {
       var tab = e.target.closest && e.target.closest("[data-tx-tab]");
@@ -345,9 +400,11 @@
       pace: pace
     };
     return O.api("/api/trip/plan", { method: "POST", body: req }).then(function (r) {
-      if (!r || !r.days || !r.days[S.tab]) throw new Error("empty");
+      if (!r || !r.days || !r.days[S.tab]) throw new Error("Сервер вернул маршрут без этого дня");
       return r.days[S.tab];
-    }).catch(function () {
+    }).catch(function (err) {
+      // Пример дня — только когда сервера нет совсем; ответ с ошибкой показываем как есть, день не трогаем.
+      if (!err || err.status !== 0) throw err;
       return fetch(MOCK_URL).then(function (r) {
         if (!r.ok) throw new Error("mock");
         return r.json();
@@ -402,8 +459,8 @@
       S.dayPace = S.dayPace || {};
       S.dayPace[idx] = pace;
       if (O.tripPlan && O.tripPlan() && O.tripPlan().days) { /* исходный план не трогаем */ }
-    }).catch(function () {
-      toast("Не удалось перестроить день", "error");
+    }).catch(function (err) {
+      toast((err && err.message) || "Не удалось перестроить день", "error");
     }).then(function () {
       S.busy = false;
       if (!host.isConnected || !host.querySelector(".tx-root")) return;
@@ -443,7 +500,8 @@
       busy: false,
       origBudget: ctx ? Math.max(0, num(ctx.budget)) : (num(b.delta) !== 0 ? Math.max(0, num(b.total) - num(b.delta)) : 0),
       mood: ctx ? ctx.mood : "",
-      tags: []
+      tags: [],
+      wizard: !!(e.detail && e.detail.wizard)
     };
     render(host, buttons);
     if (e.detail.scenario) loadScenarioState(S, String(e.detail.scenario));

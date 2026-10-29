@@ -79,6 +79,10 @@ type Room struct {
 	Image          string         `json:"image"`
 	TotalUnits     int            `json:"-"`
 	Available      int            `json:"available"`
+	BedTypes       []string       `json:"bedTypes,omitempty"`
+	View           string         `json:"view,omitempty"`
+	Kitchen        bool           `json:"kitchen,omitempty"`
+	KidsCot        bool           `json:"kidsCot,omitempty"`
 }
 
 type POI struct {
@@ -138,6 +142,9 @@ type Trip struct {
 	GuestPhone string `json:"guestPhone"`
 	CanCancel  bool   `json:"canCancel"`
 	CreatedAt  string `json:"createdAt"`
+	// Оплаченные вместе с номером позиции программы (order.go).
+	Items      []OrderItem `json:"items,omitempty"`
+	OrderTotal int         `json:"orderTotal,omitempty"`
 }
 
 type HomeStats struct {
