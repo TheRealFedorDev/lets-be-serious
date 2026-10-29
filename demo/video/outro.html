@@ -1,0 +1,21 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<link rel="stylesheet" href="/assets/app.css">
+<style>
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:#111421;color:#fff;font-family:Manrope,system-ui,sans-serif;display:grid;place-items:center;text-align:center}
+.brand{display:inline-flex;align-items:center;gap:24px}
+.brand .brand-mark{width:110px;height:110px;border-radius:32px}
+.brand .brand-mark .brand-ring,.brand .brand-mark .brand-dot{transform:scale(3.1)}
+.brand b{font-size:84px;font-weight:800;letter-spacing:-.03em}
+p{font-size:34px;font-weight:600;margin:34px 0 0;opacity:.85}
+p em{font-style:normal;color:#c8f86e}
+small{display:block;margin-top:22px;font-size:20px;opacity:.5;font-weight:500}
+.fx{opacity:0;transform:translateY(20px) scale(.98);animation:in 1s cubic-bezier(.2,.7,.2,1) forwards}
+@keyframes in{to{opacity:1;transform:none}}
+</style></head><body>
+<div>
+  <div class="brand fx" style="animation-delay:.15s"><span class="brand-mark"><span class="brand-ring"></span><span class="brand-dot"></span></span><b>О!дин</b></div>
+  <p class="fx" style="animation-delay:.6s">Один шаг до <em>идеального</em> отеля</p>
+  <small class="fx" style="animation-delay:1s">Отель, маршрут, бюджет и погода — в одном плане</small>
+</div>
+</body></html>
